@@ -350,14 +350,29 @@ async function addRecordToGoogleSheet(entry) {
     return;
   }
 
-  await submitGoogleForm(entry);
-  useServer = true;
-  adminRequired = true;
-  updateStorageStatus("已提交到 Google Sheet");
-  updateModeBanner();
-  updateAdminGate();
-  if (adminPin) {
-    await syncFromGoogleSheet();
+  try {
+    const payload = await googleJsonp({
+      ...entry,
+      action: "submit",
+      environment: Array.isArray(entry.environment) ? entry.environment.join("|") : entry.environment || "",
+    });
+    if (!payload.ok) throw new Error(payload.error || "Google Sheet submit failed");
+    useServer = true;
+    adminRequired = true;
+    updateStorageStatus("已提交到 Google Sheet");
+    updateModeBanner();
+    updateAdminGate();
+    if (adminPin) {
+      await syncFromGoogleSheet();
+    }
+  } catch {
+    records.push(entry);
+    saveRecords();
+    useServer = false;
+    updateStorageStatus("Google Sheet 提交失败，已暂存本地");
+    updateModeBanner();
+    updateAdminGate();
+    showToast("Google Sheet 提交失败，已暂存到当前浏览器。");
   }
 }
 

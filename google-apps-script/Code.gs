@@ -48,7 +48,10 @@ function doGet(e) {
   let payload;
 
   try {
-    if (params.action === "list") {
+    if (params.action === "submit") {
+      appendRecord_(params);
+      payload = { ok: true, id: params.id || "" };
+    } else if (params.action === "list") {
       requireAdmin_(params.pin);
       payload = { ok: true, records: listRecords_() };
     } else {
