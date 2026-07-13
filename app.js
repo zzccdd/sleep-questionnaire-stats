@@ -1,5 +1,6 @@
 const CONFIG = window.SLEEP_REPORT_CONFIG || {};
 const GOOGLE_SCRIPT_URL = String(CONFIG.googleScriptUrl || "").trim();
+const IS_LOCAL_PREVIEW = location.protocol === "file:";
 const DRAFT_KEY = "sleep-patterns-screening-draft-v1";
 const SECTION_TITLES = ["基本信息", "有安排日作息", "自由日作息", "睡眠时长与醒来", "周末与假期变化", "日间状态", "主观睡眠感受", "模式起源", "睡眠与健康", "后续参与"];
 
@@ -254,6 +255,15 @@ async function submitSurvey(event) {
   const result = classify(answers);
   const entry = buildEntry(answers, result);
   try {
+    if (IS_LOCAL_PREVIEW) {
+      localStorage.setItem("sleep-patterns-preview-response-v1", JSON.stringify({ answers, result, entry }));
+      localStorage.removeItem(DRAFT_KEY);
+      els.surveyView.hidden = true;
+      els.successView.hidden = false;
+      els.saveStatus.textContent = "本地预览提交成功（未上传）";
+      window.scrollTo({ top:0, behavior:"smooth" });
+      return;
+    }
     if (!GOOGLE_SCRIPT_URL) throw new Error("研究数据库尚未连接");
     const response = await googleJsonp({ ...entry, action:"submit" });
     if (!response.ok) throw new Error(response.error || "提交失败");
@@ -335,6 +345,7 @@ async function loginResearch() {
 }
 
 async function loadResearchRecords() {
+  if (IS_LOCAL_PREVIEW) { showLoginError("本地预览不会连接或读取共享研究数据。发布后研究端入口才会启用。"); return; }
   if (!GOOGLE_SCRIPT_URL) { showLoginError("研究数据库尚未连接。"); return; }
   els.refresh.disabled = true; els.researchLoginButton.disabled = true;
   try {
