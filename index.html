@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="成年人睡眠模式与习惯初期筛查问卷，约需 8–10 分钟完成。" />
+    <meta name="description" content="睡眠模式与习惯调查：从成年人自然多样的睡眠差异中识别睡眠表型，进而解析睡眠背后的生理与遗传调控机制。" />
     <title>睡眠模式与习惯调查问卷</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -19,33 +19,34 @@
     <main>
       <section id="surveyView" class="survey-view">
         <div class="hero">
-          <p class="kicker">成年人睡眠研究 · 初期筛查版</p>
-          <h1>了解你自然的睡眠模式</h1>
-          <p class="hero-copy">请根据近一个月的一般情况作答。没有“理想答案”，我们关心的是你平时真实的睡眠与日间状态。</p>
+          <p class="kicker">睡眠表型研究 · 公开招募</p>
+          <h1>你的睡眠，<br />藏着不一样的答案</h1>
+          <p class="hero-copy">每个人需要的睡眠时长、习惯的作息、醒来后的感受都各不相同。我们想收集您真实的睡眠体验，从这些自然差异中识别不同的<strong>睡眠表型</strong>，进而探索决定睡眠的生理与遗传机制。您的每一份回答，都为我们理解人类睡眠机制补充一块重要的拼图。</p>
           <div class="hero-meta">
-            <span>约 8–10 分钟</span><span>共 10 个部分</span><span>可随时退出</span>
+            <span>约 6–8 分钟</span><span>共 8 个部分</span><span>可随时退出</span><span>回答仅用于科研</span>
           </div>
         </div>
 
         <div class="consent-card" id="introCard">
-          <h2>开始前请阅读</h2>
+          <h2>开始之前，想先和您说清楚几件事</h2>
           <ul>
-            <li>参与完全自愿，你可以随时停止填写，不会有任何不利影响。</li>
-            <li>回答将严格保密，仅用于科研；研究报告中不会出现可识别个人的信息。</li>
-            <li>若符合后续研究条件，研究团队可能邀请你继续参与睡眠日记、体动记录等环节，并会再次征得同意。</li>
-            <li>本问卷只用于研究初筛，不提供医学诊断。如有明显睡眠或健康困扰，请咨询专业人员。</li>
+            <li><strong>这项研究想做什么：</strong>我们希望描绘成年人自然状态下多样的睡眠模式，识别不同的睡眠表型，并借此解析睡眠背后的生理与遗传调控机制。您的回答会帮助我们更好地理解“人为什么会这样睡”。</li>
+            <li><strong>参与完全自愿：</strong>是否填写由您自己决定，中途想停下随时可以退出，不会带来任何不利影响。</li>
+            <li><strong>您的隐私会被认真保护：</strong>回答仅用于科研分析，妥善保存；任何研究报告或论文中都不会出现能识别您身份的信息。</li>
+            <li><strong>可能的后续邀请：</strong>如果您的睡眠特征契合研究方向，我们或许会邀请您记录睡眠日记、佩戴体动记录设备等。到时会再次向您详细说明并征得您的同意。</li>
+            <li><strong>这不是医学诊断：</strong>本问卷用于科研初筛，不能替代诊断或治疗。如果睡眠问题已明显影响生活，建议及时咨询专业医生。</li>
           </ul>
           <label class="consent-check">
             <input id="consent" type="checkbox" />
             <span>我已阅读以上说明，自愿参加并同意提交本问卷。</span>
           </label>
-          <button id="startSurvey" class="button primary large" type="button" disabled>开始填写</button>
+          <button id="startSurvey" class="button primary large" type="button" disabled>我已了解，开始填写</button>
           <p class="study-info">研究负责人 / 单位、伦理审查批号及联系方式请由研究团队在正式发放前补充。</p>
         </div>
 
         <div id="formShell" class="form-shell" hidden>
           <aside class="progress-card" aria-label="问卷进度">
-            <div class="progress-summary"><span>填写进度</span><strong id="progressText">1 / 10</strong></div>
+            <div class="progress-summary"><span>填写进度</span><strong id="progressText">1 / 8</strong></div>
             <div class="progress-track" aria-hidden="true"><span id="progressBar"></span></div>
             <ol id="stepNav"></ol>
           </aside>
@@ -66,9 +67,9 @@
         <div class="success-card">
           <div class="success-icon" aria-hidden="true">✓</div>
           <p class="kicker">提交成功</p>
-          <h1>感谢你的参与</h1>
-          <p>你的回答已提交给研究团队。若符合后续研究条件，且你选择了愿意联系，研究人员可能会通过你留下的方式与您联系。</p>
-          <p class="success-note">本问卷不提供个人诊断或即时筛查结果。</p>
+          <h1>谢谢您，成为这项研究的一块拼图</h1>
+          <p>您的回答已安全提交给研究团队，会和其他参与者的数据一起，帮助我们描绘睡眠表型、解析睡眠机制。若您的睡眠特征契合后续研究，且您选择了愿意联系，研究人员可能会通过您留下的方式与您联系。</p>
+          <p class="success-note">本问卷用于科研初筛，不提供个人诊断或即时筛查结果。</p>
           <button id="newResponse" class="button secondary" type="button">填写另一份问卷</button>
         </div>
       </section>
@@ -86,8 +87,8 @@
         <div id="researchDashboard" hidden>
           <div class="research-toolbar">
             <div class="metric"><span>已提交</span><strong id="responseCount">0</strong></div>
-            <div class="metric"><span>高优先候选</span><strong id="candidateCount">0</strong></div>
-            <label class="search-box"><span>搜索研究编号</span><input id="recordSearch" type="search" placeholder="例如 S001" /></label>
+            <div class="metric"><span>绿色优先候选</span><strong id="candidateCount">0</strong></div>
+            <label class="search-box"><span>搜索姓名</span><input id="recordSearch" type="search" placeholder="请输入姓名" /></label>
             <button id="exportRecords" class="button secondary" type="button">导出 CSV</button>
             <button id="refreshRecords" class="button primary" type="button">刷新记录</button>
           </div>
