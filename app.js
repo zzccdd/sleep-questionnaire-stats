@@ -1,544 +1,1495 @@
+const STORAGE_KEY = "sleep-questionnaire-stats-v1";
+const PARTICIPANT_KEY = "sleep-questionnaire-participant-id-v1";
 const CONFIG = window.SLEEP_REPORT_CONFIG || {};
+const BACKEND_MODE =
+  CONFIG.backend || (location.protocol === "file:" ? "local" : "node");
 const GOOGLE_SCRIPT_URL = String(CONFIG.googleScriptUrl || "").trim();
-const IS_LOCAL_PREVIEW = location.protocol === "file:";
-const DRAFT_KEY = "sleep-patterns-screening-draft-v3";
-const SECTION_TITLES = ["基本信息", "通常作息", "小睡、补偿与恢复", "日间状态与功能", "对睡眠的感受", "模式起源与家族", "睡眠与健康", "后续参与"];
+const API_ENDPOINT =
+  BACKEND_MODE === "node" && location.protocol !== "file:" ? "/api/reports" : "";
 
-const options = {
-  gender: [["male","男"],["female","女"],["other","其他 / 不愿透露"]],
-  identity: [["fulltime","全职工作"],["parttime","兼职"],["student","在读学生"],["retired","退休"],["other","其他"]],
-  wakeMethod: [["natural","自然醒"],["alarm","闹钟 / 被他人叫醒"],["mixed","两者兼有"]],
-  alarm: [["never","从不"],["sometimes","偶尔"],["often","经常"],["always","总是"]],
-  nap: [["never","从不"],["rare","偶尔（每周 <1 次）"],["sometimes","有时（每周 1–3 次）"],["often","经常（几乎每天）"]],
-  unrestricted: [["same","与平时基本相同"],["slightly","略多睡一些"],["catchup","明显多睡或睡到很晚"]],
-  shortDay: [["same","与平时几乎没有差别"],["mild","略感疲惫，但基本不影响日常"],["marked","明显疲惫，效率或情绪受到影响"],["severe","难以正常完成工作、学习或日常事务"]],
-  rebound: [["same","与平时基本相同"],["lt1","略多睡一些（不到 1 小时）"],["gte1","明显多睡（1 小时以上）以补回来"],["unknown","说不清"]],
-  daytime: [["good","良好，一天中大部分时间保持清醒专注"],["okay","尚可，偶有精力或注意力下降"],["average","一般，时常感到精力不足"],["poor","较差，多数时候难以集中"]],
-  mood: [["stable","平稳良好"],["occasional","偶有低落、烦躁或紧张"],["frequent","经常感到低落、烦躁或易怒"],["marked","情绪问题已对生活造成明显困扰"]],
-  impact: [["none","基本没有影响"],["mild","偶有轻微影响"],["often","经常有一定影响"],["marked","影响明显"]],
-  wantMore: [["no","不希望，目前的睡眠时长刚好合适"],["indifferent","无所谓"],["yes","希望多睡一些"],["very_yes","很希望多睡"]],
-  refreshed: [["refreshed","神清气爽、休息充分"],["okay","尚可"],["tired","未睡够，仍感疲惫"]],
-  onset: [["childhood","自儿童期起，长期基本稳定"],["adolescent","自青少年期起，长期基本稳定"],["young_adult","自成年早期起，长期基本稳定"],["adult_years","成年后某一阶段开始，已持续多年"],["recent","最近一两年才出现"],["changed","期间曾有较大变化"]],
-  familyCompare: [["much_shorter","明显更短"],["shorter","略短一些"],["same","大致相当"],["longer","更长"],["unknown","不清楚"]],
-  family: [["yes","有"],["no","没有"],["unknown","不清楚"]],
-  frequency4: [["never","从不"],["sometimes","偶尔"],["often","经常"],["nightly","几乎每晚"]],
-  sleepReason: [["not_short","我的睡眠时间并不算少"],["cant_sleep","睡得少，是因为想睡却睡不着"],["need_less","睡得少，是因为自然不需要那么多睡眠"],["no_time","睡得少，是因为没有足够的时间可以睡"],["mixed","多种情况兼有 / 说不清"]],
-  apnea: [["none","无"],["sometimes","偶有"],["often","经常"],["unknown","不清楚"]],
-  threeFreq: [["none","无"],["sometimes","偶有"],["often","经常"]],
-  health: [["none","均无"],["condition","有相关健康状况"],["medication","正在使用相关药物"],["private","不确定 / 不愿透露"]],
-  caffeine: [["none","几乎不需要"],["sometimes","偶尔"],["daily","每天适量"],["heavy","较为依赖"]],
-  followup: [["yes","愿意"],["unsure","暂不确定"],["no","不愿意"]],
-  familyForward: [["yes","愿意"],["unsure","暂不确定"],["no","不愿意"],["na","不适用"]],
+const qualityLabels = ["很差", "较差", "一般", "较好", "很好"];
+const yesNoLabels = { yes: "有", no: "无", unknown: "不确定" };
+const watchLabels = {
+  all: "整晚佩戴",
+  partial: "部分佩戴",
+  forgot: "忘记佩戴",
+  removed: "半夜取下",
+  unknown: "不确定",
+};
+const padLabels = {
+  normal: "正常",
+  moved: "可能移动",
+  offline: "断电/断网",
+  unknown: "不确定",
+};
+const environmentLabels = {
+  noise: "噪音",
+  light: "光线",
+  temperature: "温度",
+  place: "换地点",
+  sharedBed: "同床",
+  pet: "宠物",
 };
 
-const sections = [
-  { intro: "请填写以下基本信息，帮助研究团队了解样本特征。", fields: [
-    field("participantId", "姓名", "text", { placeholder:"请输入您的姓名" }),
-    field("q1", "Q1. 您的年龄", "number", { min:18, max:100, unit:"岁" }),
-    radio("q2", "Q2. 您的性别", options.gender), radio("q3", "Q3. 您目前的主要身份", options.identity),
-    field("q4", "Q4. 您的常住地区 / 时区", "text", { placeholder:"例如：东京 / UTC+9" }),
-  ]},
-  { intro: "请分别填写有固定安排的日子（如上班、上学）与可以自由作息的日子（如周末、假期）的通常情况。", fields: [
-    paired("q5", "Q5. 上床就寝时间", "time", "约几点"),
-    paired("q6", "Q6. 上床后通常多久入睡", "number", "分钟", { min:0, max:300 }),
-    paired("q7", "Q7. 通常醒来时间", "time", "约几点"),
-    pairedRadio("q8", "Q8. 通常的醒来方式", options.wakeMethod, options.alarm),
-    field("q9", "Q9. 一周中，您通常有几天属于“有固定安排的日子”？", "number", { min:0, max:7, unit:"天" }),
-    field("q9note", "若为 7 天，可在这里说明（选填）", "text", { required:false, placeholder:"例如：几乎没有自由作息日" }),
-    duration("q10", "Q10. 综合来看，您平均每晚实际睡着的时间大约是"),
-  ]},
-  { intro: "这部分关注小睡、没有时间限制时的睡眠，以及偶尔短睡后的感受。", fields: [
-    radio("q11", "Q11. 过去一个月，您是否会在白天小睡（打盹）？", options.nap),
-    field("q11minutes", "若有，平均每次约多少分钟？（选填）", "number", { required:false, min:0, max:300, unit:"分钟" }),
-    radio("q12", "Q12. 如果连续几天没有工作、上学或闹钟的限制，您的睡眠通常会：", options.unrestricted),
-    radio("q13", "Q13. 如果某一晚只睡了很少（例如 3–4 小时），第二天您通常的状态是：", options.shortDay),
-    radio("q14", "Q14. 在这样一个睡得很少的夜晚之后，接下来一两晚您的睡眠通常会：", options.rebound),
-  ]},
-  { intro: "请评估日常情境中的困倦程度，以及近一个月的精力、情绪和日常功能。驾驶情境若不适用，可留空。", fields: [
-    ess(), radio("q16", "Q16. 总体而言，您白天的精力、注意力与思维清晰度如何？", options.daytime),
-    radio("q17", "Q17. 过去一个月，您的情绪状态总体如何？", options.mood),
-    radio("q18", "Q18. 总体而言，您的睡眠是否影响到工作、学习或日常生活？", options.impact),
-  ]},
-  { intro: "请按自己的真实感受回答，不需要追求某种“正确”的睡眠时长。", fields: [
-    radio("q19", "Q19. 如果时间完全允许，您是否希望每晚睡得更久一些？", options.wantMore),
-    field("q20", "Q20. 您认为自己每晚大约需要睡多少小时，第二天才能保持良好状态？", "number", { min:1, max:16, step:.25, unit:"小时" }),
-    radio("q21", "Q21. 早晨醒来时，您通常的感觉是：", options.refreshed),
-  ]},
-  { intro: "请回顾这种睡眠模式出现的时间、稳定性，以及家人中是否存在相似情况。", fields: [
-    radio("q22", "Q22. 您目前的睡眠模式大约从何时开始，此后是否长期稳定？", options.onset),
-    radio("q23", "Q23. 与您的父母、兄弟姐妹相比，您的睡眠时间通常：", options.familyCompare),
-    radio("q24", "Q24. 您的直系亲属中，是否有人也长期睡得很少，但白天精神状态良好？", options.family),
-    field("q24count", "若有，共多少位？（选填）", "number", { required:false, min:1, max:20, unit:"位" }),
-    field("q24relation", "若有，与您的关系是？（选填）", "text", { required:false, placeholder:"例如：父亲、妹妹" }),
-    radio("q25", "Q25. 您的直系亲属中，是否有人长期睡眠时间明显偏长？", options.family),
-  ]},
-  { intro: "以下问题用于了解可能影响睡眠的其他因素，请根据近一个月或题目指定的时间范围如实填写。", fields: [
-    frequencyMatrix(),
-    radio("q27", "Q27. 关于您的睡眠时长，以下哪一项最符合您的情况？", options.sleepReason),
-    radio("q28", "Q28. 您或同住者是否注意到您睡觉时严重打鼾、短暂憋气或呼吸停顿？", options.apnea),
-    radio("q29", "Q29. 入睡前，您的腿部是否常有不适感，必须活动后才能缓解？", options.threeFreq),
-    checks("q30", "Q30. 过去 3 个月，是否存在以下可能明显影响作息的情况？（可多选）", [["shift","轮班或夜班"],["travel","经常跨时区旅行"],["restriction","加班、备考或照护等持续性作息限制"],["stress","重大生活事件或持续高压"],["none","均无"]]),
-    checks("q31", "Q31. 您目前是否存在可能影响睡眠的健康状况，或正在使用可能影响睡眠或清醒程度的药物？（可多选）", options.health),
-    field("q31detail", "若有，可简要说明（选填）", "text", { required:false, placeholder:"健康状况或药物名称" }),
-    radio("q32", "Q32. 您平时依赖咖啡、浓茶、能量饮料等维持清醒的程度如何？", options.caffeine),
-  ]},
-  { intro: "提交前请确认联系意愿。选择“不愿意”不会影响本次问卷的使用。", fields: [
-    radio("q33", "Q33. 如果您符合后续研究条件，是否愿意由我们与您联系，进一步了解睡眠记录或监测等环节？", options.followup),
-    radio("q34", "Q34. 若您在 Q24 中选择了“有”，是否愿意代为向这些亲属转达本研究的信息？", options.familyForward),
-    field("q35", "Q35. 若愿意接受联系，请留下一种方便的联系方式（邮箱 / 电话）", "text", { required:false, placeholder:"仅在愿意联系时填写" }),
-    { type:"review" },
-  ]},
-];
-
-function field(name, label, type, extra={}) { return { type:"field", name, label, inputType:type, required: extra.required !== false, ...extra }; }
-function radio(name, label, choices) { return { type:"radio", name, label, choices, required:true }; }
-function duration(name, label) { return { type:"duration", name, label, required:true }; }
-function paired(name, label, inputType, unit, extra={}) { return { type:"paired", name, label, inputType, unit, ...extra }; }
-function pairedRadio(name, label, workChoices, freeChoices) { return { type:"pairedRadio", name, label, workChoices, freeChoices }; }
-function checks(name, label, choices) { return { type:"checks", name, label, choices }; }
-function ess() { return { type:"ess", name:"q15", label:"Q15. 日常情境中的打瞌睡可能性" }; }
-function frequencyMatrix() { return { type:"frequencyMatrix", name:"q26", label:"Q26. 过去一个月，您出现以下情况的频率如何？" }; }
+let records = loadRecords();
+let useServer = false;
+let adminPin = sessionStorage.getItem("sleep-report-admin-pin") || "";
+let adminRequired = false;
+let rememberedParticipantId = localStorage.getItem(PARTICIPANT_KEY) || "";
 
 const els = {
-  surveyView: document.querySelector("#surveyView"), successView: document.querySelector("#successView"), researchView: document.querySelector("#researchView"),
-  introCard: document.querySelector("#introCard"), consent: document.querySelector("#consent"), start: document.querySelector("#startSurvey"), formShell: document.querySelector("#formShell"),
-  form: document.querySelector("#screeningForm"), sections: document.querySelector("#questionSections"), stepNav: document.querySelector("#stepNav"), progressText: document.querySelector("#progressText"), progressBar: document.querySelector("#progressBar"),
-  prev: document.querySelector("#previousStep"), next: document.querySelector("#nextStep"), submit: document.querySelector("#submitSurvey"), error: document.querySelector("#formError"), saveStatus: document.querySelector("#saveStatus"), toast: document.querySelector("#toast"),
-  openResearch: document.querySelector("#openResearch"), leaveResearch: document.querySelector("#leaveResearch"), researchLogin: document.querySelector("#researchLogin"), researchPin: document.querySelector("#researchPin"), researchLoginButton: document.querySelector("#researchLoginButton"), loginError: document.querySelector("#loginError"),
-  dashboard: document.querySelector("#researchDashboard"), recordCards: document.querySelector("#recordCards"), recordSearch: document.querySelector("#recordSearch"), responseCount: document.querySelector("#responseCount"), candidateCount: document.querySelector("#candidateCount"), refresh: document.querySelector("#refreshRecords"), export: document.querySelector("#exportRecords"),
+  tabs: [...document.querySelectorAll(".nav-tab")],
+  viewButtons: [...document.querySelectorAll("[data-view-target]")],
+  views: {
+    dashboard: document.querySelector("#dashboardView"),
+    entry: document.querySelector("#entryView"),
+    records: document.querySelector("#recordsView"),
+  },
+  form: document.querySelector("#sleepForm"),
+  modeBanner: document.querySelector("#modeBanner"),
+  adminGate: document.querySelector("#adminGate"),
+  adminGateTitle: document.querySelector("#adminGateTitle"),
+  adminGateText: document.querySelector("#adminGateText"),
+  adminPinInput: document.querySelector("#adminPinInput"),
+  adminLogin: document.querySelector("#adminLogin"),
+  adminLogout: document.querySelector("#adminLogout"),
+  submitSuccess: document.querySelector("#submitSuccess"),
+  participantMemory: document.querySelector("#participantMemory"),
+  changeParticipant: document.querySelector("#changeParticipant"),
+  toast: document.querySelector("#toast"),
+  filterParticipant: document.querySelector("#filterParticipant"),
+  filterStart: document.querySelector("#filterStart"),
+  filterEnd: document.querySelector("#filterEnd"),
+  clearFilters: document.querySelector("#clearFilters"),
+  rangeLabel: document.querySelector("#rangeLabel"),
+  storageStatus: document.querySelector("#storageStatus"),
+  metrics: {
+    subjects: document.querySelector("#metricSubjects"),
+    count: document.querySelector("#metricCount"),
+    duration: document.querySelector("#metricDuration"),
+    efficiency: document.querySelector("#metricEfficiency"),
+    quality: document.querySelector("#metricQuality"),
+  },
+  trendChart: document.querySelector("#trendChart"),
+  qualityChart: document.querySelector("#qualityChart"),
+  factorList: document.querySelector("#factorList"),
+  insights: document.querySelector("#insights"),
+  participantBody: document.querySelector("#participantBody"),
+  recordsBody: document.querySelector("#recordsBody"),
+  loadDemo: document.querySelector("#loadDemo"),
+  copyLink: document.querySelector("#copyLink"),
+  exportCsv: document.querySelector("#exportCsv"),
+  csvImport: document.querySelector("#csvImport"),
+  clearAll: document.querySelector("#clearAll"),
 };
 
-let currentStep = 0;
-let records = [];
-let researchPin = "";
-let saveTimer;
+init();
 
-renderForm();
-restoreDraft();
-bindEvents();
-if (location.hash === "#research") openResearchView();
+function init() {
+  const today = new Date().toISOString().slice(0, 10);
+  els.form.elements.formDate.value = today;
+  els.form.elements.sleepDate.value = today;
+  applyRememberedParticipant();
 
-function renderForm() {
-  els.stepNav.innerHTML = SECTION_TITLES.map((title, i) => `<li data-step="${i}">${i + 1}. ${title}</li>`).join("");
-  els.sections.innerHTML = sections.map((section, i) => `
-    <section class="form-section" data-section="${i}" ${i ? "hidden" : ""}>
-      <p class="section-number">第 ${i + 1} 部分 · 共 ${sections.length} 部分</p>
-      <h2>${SECTION_TITLES[i]}</h2>
-      <p class="section-intro">${section.intro}</p>
-      ${section.fields.map(renderField).join("")}
-    </section>`).join("");
-  updateStep();
-}
-
-function renderField(item) {
-  if (item.type === "radio") return `<fieldset class="question"><legend class="question-title">${item.label} <em>*</em></legend><div class="options two-col">${item.choices.map(([value,label]) => `<label class="option"><input type="radio" name="${item.name}" value="${value}" required /><span>${label}</span></label>`).join("")}</div></fieldset>`;
-  if (item.type === "duration") return `<div class="question"><label class="question-title">${item.label} <em>*</em></label><div class="field-row"><label class="field"><span>小时</span><input name="${item.name}h" type="number" inputmode="decimal" min="0" max="16" required /></label><label class="field"><span>分钟</span><select name="${item.name}m" required><option value="">请选择</option><option value="0">0 分钟</option><option value="15">15 分钟</option><option value="30">30 分钟</option><option value="45">45 分钟</option></select></label></div></div>`;
-  if (item.type === "paired") {
-    const attrs = [item.min != null ? `min="${item.min}"` : "", item.max != null ? `max="${item.max}"` : ""].filter(Boolean).join(" ");
-    const control = suffix => item.inputType === "time" ? renderTimePicker(`${item.name}${suffix}`) : `<div class="inline-unit"><input name="${item.name}${suffix}" type="number" inputmode="numeric" ${attrs} required /><span>${item.unit}</span></div>`;
-    return `<div class="question"><label class="question-title">${item.label} <em>*</em></label><div class="field-row schedule-pair"><label class="field"><span>有固定安排的日子</span>${control("work")}</label><label class="field"><span>自由作息的日子</span>${control("free")}</label></div></div>`;
-  }
-  if (item.type === "pairedRadio") return `<fieldset class="question"><legend class="question-title">${item.label} <em>*</em></legend><div class="paired-options"><div><h4>有固定安排的日子</h4><div class="options">${item.workChoices.map(([value,label]) => `<label class="option"><input type="radio" name="${item.name}work" value="${value}" required /><span>${label}</span></label>`).join("")}</div></div><div><h4>自由作息的日子</h4><div class="options">${item.freeChoices.map(([value,label]) => `<label class="option"><input type="radio" name="${item.name}free" value="${value}" required /><span>${label}</span></label>`).join("")}</div></div></div></fieldset>`;
-  if (item.type === "checks") return `<fieldset class="question"><legend class="question-title">${item.label} <em>*</em></legend><div class="options two-col">${item.choices.map(([value,label]) => `<label class="option"><input type="checkbox" name="${item.name}" value="${value}" /><span>${label}</span></label>`).join("")}</div></fieldset>`;
-  if (item.type === "ess") {
-    const scenes = ["坐着安静阅读时","看电视或长时间看屏幕时","在公共场合安静坐着时","乘车连续约一小时（非驾驶）时","下午有条件躺下休息时","午饭后安静坐着（未饮酒）时","开车途中堵车或等红灯时","与人面对面交谈时"];
-    return `<fieldset class="question"><legend class="question-title">${item.label} <em>*</em></legend><p class="hint">0 = 从不会，1 = 很少，2 = 有时，3 = 很可能。若您平时不驾车，驾驶情境可留空。</p><div class="ess-grid"><div class="ess-row ess-head"><span>情境</span><span>0</span><span>1</span><span>2</span><span>3</span></div>${scenes.map((scene,i) => `<div class="ess-row"><span>${scene}</span>${[0,1,2,3].map(v => `<label aria-label="${scene}：${v} 分"><input type="radio" name="q15_${i+1}" value="${v}" ${i === 6 ? "" : "required"} /></label>`).join("")}</div>`).join("")}</div></fieldset>`;
-  }
-  if (item.type === "frequencyMatrix") {
-    const rows = [["q26_1","上床后超过 30 分钟仍难以入睡"],["q26_2","夜间反复醒来，或早醒后难以再次入睡"]];
-    return `<fieldset class="question"><legend class="question-title">${item.label} <em>*</em></legend><div class="frequency-grid"><div class="frequency-row frequency-head"><span>情况</span>${options.frequency4.map(([,label]) => `<span>${label}</span>`).join("")}</div>${rows.map(([name,label]) => `<div class="frequency-row"><span>${label}</span>${options.frequency4.map(([value]) => `<label aria-label="${label}：${value}"><input type="radio" name="${name}" value="${value}" required /></label>`).join("")}</div>`).join("")}</div></fieldset>`;
-  }
-  if (item.type === "review") return `<div class="question"><h3>提交前确认</h3><div id="reviewList" class="review-list"></div><div class="privacy-callout">提交后，研究者会依据内部规则进行初筛。受试者页面不会显示候选类别，且初筛结果不能替代医学诊断。</div></div>`;
-  const attrs = [`name="${item.name}"`, `type="${item.inputType}"`, item.inputType === "number" ? "inputmode=\"decimal\"" : "", item.required ? "required" : "", item.min != null ? `min="${item.min}"` : "", item.max != null ? `max="${item.max}"` : "", item.step != null ? `step="${item.step}"` : "", item.placeholder ? `placeholder="${item.placeholder}"` : ""].filter(Boolean).join(" ");
-  return `<div class="question"><label class="question-title" for="${item.name}">${item.label}${item.required ? " <em>*</em>" : ""}</label><div class="inline-unit"><input id="${item.name}" ${attrs} />${item.unit ? `<span>${item.unit}</span>` : ""}</div></div>`;
-}
-
-function renderTimePicker(name) {
-  const hours = Array.from({length:24}, (_,hour) => `<option value="${String(hour).padStart(2,"0")}">${String(hour).padStart(2,"0")}</option>`).join("");
-  const minutes = ["00","15","30","45"].map(minute => `<option value="${minute}">${minute}</option>`).join("");
-  return `<div class="time-picker"><select name="${name}_h" aria-label="小时" required><option value="">小时</option>${hours}</select><span>时</span><select name="${name}_m" aria-label="分钟" required><option value="">分钟</option>${minutes}</select><span>分</span></div>`;
-}
-
-function bindEvents() {
-  els.consent.addEventListener("change", () => { els.start.disabled = !els.consent.checked; });
-  els.start.addEventListener("click", () => { els.introCard.hidden = true; els.formShell.hidden = false; window.scrollTo({ top:64, behavior:"smooth" }); });
-  els.prev.addEventListener("click", () => changeStep(-1));
-  els.next.addEventListener("click", () => { if (validateStep()) changeStep(1); });
-  els.form.addEventListener("input", event => {
-    updateValidationProgress(event.target);
-    scheduleDraftSave();
+  els.tabs.forEach((tab) => {
+    tab.addEventListener("click", () => switchView(tab.dataset.view));
   });
-  els.form.addEventListener("change", event => {
-    if (["q30","q31"].includes(event.target.name)) enforceExclusiveChecks(event.target);
-    scheduleDraftSave();
-    if (currentStep === sections.length - 1) updateReview();
+  els.viewButtons.forEach((button) => {
+    button.addEventListener("click", () => switchView(button.dataset.viewTarget));
   });
-  els.form.addEventListener("submit", submitSurvey);
-  document.querySelector("#newResponse").addEventListener("click", resetSurvey);
-  els.openResearch.addEventListener("click", openResearchView);
-  els.leaveResearch.addEventListener("click", leaveResearchView);
-  els.researchLoginButton.addEventListener("click", loginResearch);
-  els.researchPin.addEventListener("keydown", e => { if (e.key === "Enter") loginResearch(); });
-  els.recordSearch.addEventListener("input", renderRecords);
-  els.refresh.addEventListener("click", loadResearchRecords);
-  els.export.addEventListener("click", exportCsv);
-}
 
-function changeStep(delta) {
-  currentStep = Math.max(0, Math.min(sections.length - 1, currentStep + delta));
-  updateStep();
-  window.scrollTo({ top:64, behavior:"smooth" });
-}
-
-function updateStep() {
-  document.querySelectorAll("[data-section]").forEach((node, i) => { node.hidden = i !== currentStep; });
-  els.stepNav.querySelectorAll("li").forEach((node, i) => { node.classList.toggle("active", i === currentStep); node.classList.toggle("complete", i < currentStep); });
-  els.progressText.textContent = `${currentStep + 1} / ${sections.length}`;
-  els.progressBar.style.width = `${((currentStep + 1) / sections.length) * 100}%`;
-  els.prev.hidden = currentStep === 0;
-  els.next.hidden = currentStep === sections.length - 1;
-  els.submit.hidden = currentStep !== sections.length - 1;
-  clearValidationErrors();
-  if (currentStep === sections.length - 1) updateReview();
-}
-
-function validateStep() {
-  clearValidationErrors();
-  const section = document.querySelector(`[data-section="${currentStep}"]`);
-  const required = [...section.querySelectorAll("[required]")];
-  const radioNames = [...new Set(required.filter(x => x.type === "radio").map(x => x.name))];
-  const missingTargets = radioNames
-    .filter(name => !section.querySelector(`input[name="${name}"]:checked`))
-    .map(name => section.querySelector(`input[name="${name}"]`));
-  missingTargets.push(...required.filter(x => x.type !== "radio" && !x.value));
-  if (currentStep === 6 && !els.form.querySelector('input[name="q30"]:checked')) missingTargets.push(els.form.querySelector('input[name="q30"]'));
-  if (currentStep === 6 && !els.form.querySelector('input[name="q31"]:checked')) missingTargets.push(els.form.querySelector('input[name="q31"]'));
-  if (currentStep === sections.length - 1 && value("q33") === "yes" && !value("q35").trim()) missingTargets.push(document.querySelector("#q35"));
-  if (missingTargets.filter(Boolean).length) return showValidationErrors(missingTargets);
-  return true;
-}
-
-function showValidationErrors(targets) {
-  const questions = [...new Set(targets.filter(Boolean).map(target => target.closest(".question")).filter(Boolean))];
-  questions.forEach(question => {
-    question.classList.add("has-error");
-    if (!question.querySelector(".question-error")) {
-      const message = document.createElement("p");
-      message.className = "question-error";
-      message.setAttribute("role", "alert");
-      message.textContent = "此题尚未完成，请补充填写。";
-      question.querySelector(".question-title")?.insertAdjacentElement("afterend", message);
-    }
+  els.form.addEventListener("submit", handleSubmit);
+  els.changeParticipant.addEventListener("click", clearRememberedParticipant);
+  els.adminLogin.addEventListener("click", handleAdminLogin);
+  els.adminLogout.addEventListener("click", handleAdminLogout);
+  els.adminPinInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") handleAdminLogin();
   });
-  els.error.textContent = `本部分还有 ${questions.length} 题未完成，已用红色标出。`;
-  els.error.hidden = false;
-  const firstTarget = targets.find(Boolean);
-  firstTarget?.focus({ preventScroll:true });
-  firstTarget?.closest(".question")?.scrollIntoView({ behavior:"smooth", block:"center" });
-  return false;
-}
-
-function clearValidationErrors() {
-  document.querySelectorAll(".question.has-error").forEach(question => question.classList.remove("has-error"));
-  document.querySelectorAll(".question-error").forEach(message => message.remove());
-  els.error.hidden = true;
-}
-
-function updateValidationProgress(target) {
-  const question = target?.closest?.(".question.has-error");
-  if (!question || !isQuestionComplete(question)) return;
-  question.classList.remove("has-error");
-  question.querySelector(".question-error")?.remove();
-  const remaining = document.querySelectorAll(`[data-section="${currentStep}"] .question.has-error`).length;
-  if (remaining) els.error.textContent = `本部分还有 ${remaining} 题未完成，已用红色标出。`;
-  else els.error.hidden = true;
-}
-
-function isQuestionComplete(question) {
-  const required = [...question.querySelectorAll("[required]")];
-  const radioNames = [...new Set(required.filter(input => input.type === "radio").map(input => input.name))];
-  if (radioNames.some(name => !question.querySelector(`input[name="${name}"]:checked`))) return false;
-  if (required.some(input => input.type !== "radio" && !input.value)) return false;
-  for (const name of ["q30", "q31"]) {
-    if (question.querySelector(`input[name="${name}"]`) && !question.querySelector(`input[name="${name}"]:checked`)) return false;
-  }
-  if (question.querySelector("#q35") && value("q33") === "yes" && !value("q35").trim()) return false;
-  return true;
-}
-
-function scheduleDraftSave() {
-  clearTimeout(saveTimer);
-  els.saveStatus.textContent = "正在保存草稿…";
-  saveTimer = setTimeout(() => { localStorage.setItem(DRAFT_KEY, JSON.stringify(serializeForm())); els.saveStatus.textContent = "草稿已保存在本设备"; }, 350);
-}
-
-function restoreDraft() {
-  try {
-    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
-    if (!draft) return;
-    Object.entries(draft).forEach(([name,val]) => {
-      const nodes = els.form.elements[name];
-      if (!nodes) return;
-      if (nodes instanceof RadioNodeList) [...nodes].forEach(node => {
-        node.checked = node.type === "checkbox" ? (Array.isArray(val) ? val.includes(node.value) : String(node.value) === String(val)) : String(node.value) === String(val);
-      });
-      else nodes.value = val;
-    });
-    ["q5work","q5free","q7work","q7free"].forEach(name => {
-      const combined = String(draft[name] || "");
-      const hour = els.form.elements[`${name}_h`];
-      const minute = els.form.elements[`${name}_m`];
-      if (combined.includes(":") && hour && minute && !hour.value && !minute.value) [hour.value, minute.value] = combined.split(":");
-    });
-    els.saveStatus.textContent = "已恢复本设备上的草稿";
-  } catch {}
-}
-
-function serializeForm() {
-  const data = {};
-  new FormData(els.form).forEach((val,key) => {
-    if (Object.prototype.hasOwnProperty.call(data, key)) data[key] = Array.isArray(data[key]) ? [...data[key], val] : [data[key], val];
-    else data[key] = val;
+  els.clearFilters.addEventListener("click", () => {
+    els.filterParticipant.value = "";
+    els.filterStart.value = "";
+    els.filterEnd.value = "";
+    render();
   });
-  ["q5work","q5free","q7work","q7free"].forEach(name => {
-    const hour = data[`${name}_h`];
-    const minute = data[`${name}_m`];
-    if (hour !== undefined && minute !== undefined) data[name] = `${hour}:${minute}`;
+  [els.filterParticipant, els.filterStart, els.filterEnd].forEach((input) => {
+    input.addEventListener("input", render);
   });
-  return data;
+  els.loadDemo.addEventListener("click", loadDemoData);
+  els.copyLink.addEventListener("click", copyPublicLink);
+  els.exportCsv.addEventListener("click", exportCsv);
+  els.csvImport.addEventListener("change", importCsv);
+  els.clearAll.addEventListener("click", clearAllRecords);
+
+  switchView("entry");
+  updateModeBanner();
+  updateAdminGate();
+  render();
+  syncFromServer();
 }
 
-function value(name) { return String(new FormData(els.form).get(name) || ""); }
-
-function enforceExclusiveChecks(target) {
-  const boxes = [...els.form.querySelectorAll(`input[name="${target.name}"]`)];
-  const exclusive = target.name === "q31" ? ["none","private"] : ["none"];
-  if (exclusive.includes(target.value) && target.checked) boxes.forEach(box => { if (box !== target) box.checked = false; });
-  if (!exclusive.includes(target.value) && target.checked) boxes.forEach(box => { if (exclusive.includes(box.value)) box.checked = false; });
+function switchView(viewName) {
+  Object.entries(els.views).forEach(([name, view]) => {
+    view.classList.toggle("active-view", name === viewName);
+  });
+  els.tabs.forEach((tab) => {
+    const active = tab.dataset.view === viewName;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-pressed", String(active));
+  });
+  document.body.dataset.view = viewName;
+  if (viewName !== "entry") syncFromServer();
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function updateReview() {
-  const box = document.querySelector("#reviewList");
-  if (!box) return;
-  const answers = serializeForm();
-  const sleep = Number(answers.q10h || 0) + Number(answers.q10m || 0) / 60;
-  const result = classify(answers);
-  box.innerHTML = [
-    ["姓名", answers.participantId || "尚未填写"],
-    ["近一月平均实际睡眠", sleep ? formatHours(sleep) : "尚未填写"],
-    ["日间困倦情境总分", result.essDisplay],
-    ["后续联系意愿", labelFor("followup", answers.q33) || "尚未选择"],
-  ].map(([a,b]) => `<div class="review-item"><span>${a}</span><strong>${escapeHtml(b)}</strong></div>`).join("");
-}
-
-async function submitSurvey(event) {
+async function handleSubmit(event) {
   event.preventDefault();
-  if (!validateStep()) return;
-  els.submit.disabled = true;
-  els.submit.textContent = "正在提交…";
-  const answers = serializeForm();
-  answers.participantId = answers.participantId.trim() || `P-${Date.now().toString(36).slice(-6).toUpperCase()}`;
-  const result = classify(answers);
-  const entry = buildEntry(answers, result);
+  const formData = new FormData(els.form);
+  const entry = Object.fromEntries(formData.entries());
+  delete entry.rememberParticipant;
+  entry.environment = formData.getAll("environment");
+  entry.id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  entry.createdAt = new Date().toISOString();
+
+  normalizeRecord(entry);
+  if (formData.get("rememberParticipant")) {
+    rememberParticipant(entry.participantId);
+  } else {
+    forgetParticipant();
+  }
+  await addRecord(entry);
+  els.form.reset();
+  els.form.elements.formDate.value = new Date().toISOString().slice(0, 10);
+  els.form.elements.sleepDate.value = new Date().toISOString().slice(0, 10);
+  applyRememberedParticipant();
+  els.submitSuccess.hidden = false;
+  render();
+  switchView("entry");
+  showToast(useServer ? "记录已提交到共享服务器。" : "记录已保存到当前浏览器。");
+}
+
+function applyRememberedParticipant() {
+  const input = els.form.elements.participantId;
+  const rememberControl = els.form.elements.rememberParticipant;
+  if (!rememberedParticipantId) {
+    input.readOnly = false;
+    input.value = input.value || "";
+    if (rememberControl) rememberControl.checked = true;
+    els.participantMemory.innerHTML = `<span>受试者不需要账号密码。首次提交后，本页面可以记住这台设备上的研究编号。</span>`;
+    els.changeParticipant.hidden = true;
+    return;
+  }
+  input.value = rememberedParticipantId;
+  input.readOnly = true;
+  if (rememberControl) rememberControl.checked = true;
+  els.participantMemory.innerHTML = `
+    <span>这台设备已自动识别为</span>
+    <strong>${escapeHtml(rememberedParticipantId)}</strong>
+    <em>之后每天只需要填写睡眠日期和睡眠情况。</em>
+  `;
+  els.changeParticipant.hidden = false;
+}
+
+function rememberParticipant(value) {
+  const cleaned = String(value || "").trim();
+  if (!cleaned) return;
+  rememberedParticipantId = cleaned;
+  localStorage.setItem(PARTICIPANT_KEY, cleaned);
+}
+
+function forgetParticipant() {
+  rememberedParticipantId = "";
+  localStorage.removeItem(PARTICIPANT_KEY);
+}
+
+function clearRememberedParticipant() {
+  forgetParticipant();
+  const input = els.form.elements.participantId;
+  input.readOnly = false;
+  input.value = "";
+  input.focus();
+  applyRememberedParticipant();
+  showToast("已清除记住的研究编号，可以重新填写。");
+}
+
+async function syncFromServer() {
+  if (isGoogleBackend()) {
+    await syncFromGoogleSheet();
+    return;
+  }
+  if (!API_ENDPOINT) {
+    updateStorageStatus();
+    updateModeBanner();
+    updateAdminGate();
+    return;
+  }
   try {
-    if (IS_LOCAL_PREVIEW) {
-      localStorage.setItem("sleep-patterns-preview-response-v3", JSON.stringify({ answers, result, entry }));
-      localStorage.removeItem(DRAFT_KEY);
-      els.surveyView.hidden = true;
-      els.successView.hidden = false;
-      els.saveStatus.textContent = "本地预览提交成功（未上传）";
-      window.scrollTo({ top:0, behavior:"smooth" });
+    const response = await fetch(API_ENDPOINT, { headers: apiHeaders({ Accept: "application/json" }) });
+    if (response.status === 401) {
+      if (adminPin) {
+        adminPin = "";
+        sessionStorage.removeItem("sleep-report-admin-pin");
+      }
+      useServer = true;
+      adminRequired = true;
+      records = [];
+      updateStorageStatus("公开提交已连接，研究统计需授权");
+      updateModeBanner();
+      updateAdminGate();
+      render();
       return;
     }
-    if (!GOOGLE_SCRIPT_URL) throw new Error("研究数据库尚未连接");
-    const response = await googleJsonp({ ...entry, action:"submit" });
-    if (!response.ok) throw new Error(response.error || "提交失败");
-    localStorage.removeItem(DRAFT_KEY);
-    els.surveyView.hidden = true;
-    els.successView.hidden = false;
-    els.saveStatus.textContent = "回答已安全提交";
-    window.scrollTo({ top:0, behavior:"smooth" });
-  } catch (error) {
-    els.error.textContent = `暂时无法提交：${error.message}。草稿仍保存在本设备，请稍后重试。`;
-    els.error.hidden = false;
-    showToast("提交未完成，草稿没有丢失。 ");
-  } finally {
-    els.submit.disabled = false;
-    els.submit.textContent = "确认并提交";
+    if (!response.ok) throw new Error("API unavailable");
+    const serverRecords = await response.json();
+    records = serverRecords.map((record) => {
+      normalizeRecord(record);
+      return record;
+    });
+    useServer = true;
+    adminRequired = false;
+    updateStorageStatus();
+    updateModeBanner();
+    updateAdminGate();
+    render();
+  } catch {
+    useServer = false;
+    updateStorageStatus();
+    updateModeBanner();
+    updateAdminGate();
   }
 }
 
-function buildEntry(a, result) {
-  const today = new Date().toISOString().slice(0,10);
-  return {
-    id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
-    createdAt: new Date().toISOString(), participantId:a.participantId, formDate:today, sleepDate:today,
-    bedTime:a.q5work, trySleepTime:addMinutes(a.q5work, Number(a.q6work || 0)), wakeTime:a.q7work, riseTime:a.q7work,
-    sleepLatency:a.q6work, napStatus:a.q11, napMinutes:a.q11minutes || "", caffeine:a.q32,
-    medication:asArray(a.q31).includes("medication") ? (a.q31detail || "yes") : "no", discomfort:a.q29,
-    stress:asArray(a.q30).join("|"), recovery:a.q21, daytimeSleepiness:String(result.essTotal),
-    deviceNote: JSON.stringify({ version:"screening-v3", classification:result.classification, criteria:result.criteria, flags:result.flags }),
-    additionalNote: JSON.stringify({ version:"screening-v3", answers:a }),
-  };
-}
-
-function classify(a) {
-  const workSleep = estimatedSleep(a.q5work, a.q6work, a.q7work);
-  const freeSleep = estimatedSleep(a.q5free, a.q6free, a.q7free);
-  const workDays = Number(a.q9);
-  const weightedSleep = Number.isFinite(workSleep) && Number.isFinite(freeSleep) && Number.isFinite(workDays)
-    ? workDays === 7 ? workSleep : workDays === 0 ? freeSleep : (workSleep * workDays + freeSleep * (7 - workDays)) / 7
-    : NaN;
-  const selfReportedSleep = Number(a.q10h || 0) + Number(a.q10m || 0) / 60;
-  const compensation = Number.isFinite(workSleep) && Number.isFinite(freeSleep) ? freeSleep - workSleep : NaN;
-  const essValues = Array.from({length:8}, (_,i) => a[`q15_${i+1}`] === undefined ? null : Number(a[`q15_${i+1}`]));
-  const drivingMissing = essValues[6] == null;
-  const rawEss = essValues.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
-  const essTotal = drivingMissing ? Math.round((rawEss * 8 / 7) * 10) / 10 : rawEss;
-  const q30 = asArray(a.q30);
-  const q31 = asArray(a.q31);
-  const r1 = ["often","always"].includes(a.q8free);
-  const r2 = Number.isFinite(weightedSleep) && Math.abs(selfReportedSleep - weightedSleep) > 1.5;
-  const criteria = {
-    C1: ["childhood","adolescent","young_adult"].includes(a.q22),
-    C2: Number.isFinite(weightedSleep) && weightedSleep <= 6.5 && Number(a.q20) <= 6.5 && a.q27 === "need_less",
-    C3: !r1 && Number.isFinite(compensation) && compensation < 1 && ["never","rare"].includes(a.q11) && a.q12 === "same",
-    C4: essTotal <= 6 && ["good","okay"].includes(a.q16) && a.q32 !== "heavy",
-    C5: ["good","okay"].includes(a.q16) && ["stable","occasional"].includes(a.q17) && ["none","mild"].includes(a.q18),
-    C6: ["same","mild"].includes(a.q13) && ["same","lt1"].includes(a.q14),
-    C7: a.q24 === "yes",
-  };
-  const flags = [];
-  if (r1) flags.push("R1：自由日常设闹钟，补偿量不可解释");
-  if (r2) flags.push("R2：自报时长与推算时长相差超过 1.5 小时");
-  if (["often","nightly"].includes(a.q26_1)) flags.push("入睡困难");
-  if (["often","nightly"].includes(a.q26_2)) flags.push("睡眠维持困难");
-  if (["cant_sleep","no_time"].includes(a.q27)) flags.push("短睡归因存在强混杂");
-  if (["sometimes","often"].includes(a.q28)) flags.push("打鼾 / 憋气线索");
-  if (["sometimes","often"].includes(a.q29)) flags.push("腿部不适线索");
-  if (!q30.includes("none")) flags.push("近期作息限制 / 应激因素");
-  if (q31.some(x => ["condition","medication","private"].includes(x))) flags.push("健康状况或用药需核实");
-  if (a.q32 === "heavy") flags.push("较依赖咖啡因维持清醒");
-  const hardRed = ["cant_sleep","no_time"].includes(a.q27) || a.q12 === "catchup" || (Number.isFinite(compensation) && compensation >= 1.5) || essTotal >= 11 || a.q16 === "poor" || a.q18 === "marked" || ["often","nightly"].includes(a.q26_1) || ["often","nightly"].includes(a.q26_2) || q30.some(x => ["shift","restriction","stress"].includes(x));
-  const coreGreen = [criteria.C1,criteria.C2,criteria.C3,criteria.C4,criteria.C5,criteria.C6].every(Boolean) && !r2 && !q31.some(x => ["condition","medication"].includes(x)) && !["sometimes","often"].includes(a.q28) && !["sometimes","often"].includes(a.q29);
-  const classification = hardRed ? "红色：暂不作为候选" : coreGreen ? "绿色：优先候选" : "黄色：需核实";
-  return {
-    classification, criteria, flags, workSleep, freeSleep, weightedSleep, selfReportedSleep, compensation,
-    essTotal, essDisplay:`${essTotal} / 24${drivingMissing ? "（7 项折算）" : ""}`,
-  };
-}
-
-function estimatedSleep(bedTime, latency, wakeTime) {
-  if (!bedTime || !wakeTime) return NaN;
-  const sleepStart = addMinutes(bedTime, Number(latency || 0));
-  return hoursBetween(sleepStart, wakeTime);
-}
-
-function hoursBetween(startTime, endTime) {
-  if (!startTime || !endTime) return NaN;
-  const [sh,sm] = startTime.split(":").map(Number); const [eh,em] = endTime.split(":").map(Number);
-  let diff = eh * 60 + em - (sh * 60 + sm); if (diff < 0) diff += 1440;
-  return diff / 60;
-}
-
-function asArray(value) { return Array.isArray(value) ? value : value ? [value] : []; }
-
-function addMinutes(time, minutes) {
-  if (!time || !Number.isFinite(minutes)) return time || "";
-  const [h,m] = time.split(":").map(Number); const total = (h*60+m+minutes) % 1440;
-  return `${String(Math.floor(total/60)).padStart(2,"0")}:${String(total%60).padStart(2,"0")}`;
-}
-
-function resetSurvey() {
-  els.form.reset(); currentStep = 0; localStorage.removeItem(DRAFT_KEY);
-  els.successView.hidden = true; els.surveyView.hidden = false; els.introCard.hidden = false; els.formShell.hidden = true; els.consent.checked = false; els.start.disabled = true; els.saveStatus.textContent = "回答仅用于科研"; updateStep(); window.scrollTo({top:0});
-}
-
-function openResearchView() {
-  location.hash = "research";
-  els.surveyView.hidden = true; els.successView.hidden = true; els.researchView.hidden = false; els.saveStatus.textContent = "研究端数据受 PIN 保护"; window.scrollTo({top:0});
-}
-function leaveResearchView() { history.replaceState(null,"",location.pathname); els.researchView.hidden = true; els.surveyView.hidden = false; els.saveStatus.textContent = "回答仅用于科研"; window.scrollTo({top:0}); }
-
-async function loginResearch() {
-  researchPin = els.researchPin.value.trim();
-  if (!researchPin) { showLoginError("请输入研究端 PIN。"); return; }
-  await loadResearchRecords();
-}
-
-async function loadResearchRecords() {
-  if (IS_LOCAL_PREVIEW) { showLoginError("本地预览不会连接或读取共享研究数据。发布后研究端入口才会启用。"); return; }
-  if (!GOOGLE_SCRIPT_URL) { showLoginError("研究数据库尚未连接。"); return; }
-  els.refresh.disabled = true; els.researchLoginButton.disabled = true;
+async function addRecord(entry) {
+  if (isGoogleBackend()) {
+    await addRecordToGoogleSheet(entry);
+    return;
+  }
+  if (!API_ENDPOINT) {
+    records.push(entry);
+    saveRecords();
+    return;
+  }
   try {
-    const payload = await googleJsonp({ action:"list", pin:researchPin });
-    if (!payload.ok) throw new Error(payload.error || "PIN 不正确");
-    records = (payload.records || []).map(parseRecord).filter(Boolean);
-    els.researchLogin.hidden = true; els.dashboard.hidden = false; els.loginError.hidden = true; renderRecords();
-  } catch (error) { showLoginError(`无法读取记录：${error.message}`); }
-  finally { els.refresh.disabled = false; els.researchLoginButton.disabled = false; }
+    const response = await fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(entry),
+    });
+    if (!response.ok) throw new Error("Save failed");
+    const payload = await response.json();
+    if (Array.isArray(payload)) {
+      records = payload;
+      records.forEach(normalizeRecord);
+    }
+    useServer = true;
+    updateStorageStatus();
+  } catch {
+    records.push(entry);
+    saveRecords();
+    useServer = false;
+    updateStorageStatus();
+    showToast("在线保存失败，已暂存到本地浏览器。");
+  }
 }
 
-function parseRecord(record) {
+async function syncFromGoogleSheet() {
+  if (!GOOGLE_SCRIPT_URL) {
+    useServer = false;
+    adminRequired = true;
+    updateStorageStatus("等待配置 Google Sheet");
+    updateModeBanner();
+    updateAdminGate();
+    return;
+  }
+
+  if (!adminPin) {
+    useServer = true;
+    adminRequired = true;
+    records = [];
+    updateStorageStatus("免费问卷已连接，研究统计需 PIN");
+    updateModeBanner();
+    updateAdminGate();
+    render();
+    return;
+  }
+
   try {
-    const note = JSON.parse(String(record.additionalNote || "{}"));
-    if (note.version !== "screening-v3" || !note.answers) return null;
-    const result = classify(note.answers);
-    return { ...record, answers:note.answers, result };
-  } catch { return null; }
+    const payload = await googleJsonp({ action: "list", pin: adminPin });
+    if (!payload.ok) throw new Error(payload.error || "Unauthorized");
+    records = (payload.records || []).map((record) => {
+      normalizeRecord(record);
+      return record;
+    });
+    useServer = true;
+    adminRequired = false;
+    updateStorageStatus("Google Sheet 已连接");
+    updateModeBanner();
+    updateAdminGate();
+    render();
+  } catch {
+    adminPin = "";
+    sessionStorage.removeItem("sleep-report-admin-pin");
+    useServer = Boolean(GOOGLE_SCRIPT_URL);
+    adminRequired = true;
+    records = [];
+    updateStorageStatus("研究端 PIN 未通过");
+    updateModeBanner();
+    updateAdminGate();
+    render();
+  }
 }
 
-function renderRecords() {
-  const query = els.recordSearch.value.trim().toLowerCase();
-  const shown = records.filter(r => !query || String(r.participantId).toLowerCase().includes(query));
-  els.responseCount.textContent = records.length;
-  els.candidateCount.textContent = records.filter(r => r.result.classification.startsWith("绿色")).length;
-  if (!shown.length) { els.recordCards.innerHTML = `<div class="empty">${records.length ? "没有匹配的姓名。" : "尚未读取到新版初筛问卷记录。"}</div>`; return; }
-  els.recordCards.innerHTML = shown.map(record => {
-    const r = record.result; const a = record.answers; const badge = r.classification.startsWith("绿色") ? "high" : r.classification.startsWith("红色") ? "exclude" : "review";
-    const criteriaText = Object.entries(r.criteria).map(([key,ok]) => `${key} ${ok ? "✓" : "—"}`).join("　");
-    return `<article class="record-card"><div class="record-summary"><div><strong>${escapeHtml(record.participantId || "未填写姓名")}</strong><span>${formatDate(record.createdAt)}</span></div><div><span>判读</span><b class="screening-badge ${badge}">${r.classification}</b></div><div><span>一周加权 eTST</span><b>${formatHours(r.weightedSleep)}</b></div><div><span>自由日补偿量</span><b>${formatSignedHours(r.compensation)}</b></div><div><span>困倦总分</span><b>${r.essDisplay}</b></div></div><details class="record-details"><summary>查看关键回答与复核线索</summary><div class="detail-grid">${detail("C1–C7", criteriaText)}${detail("复核线索", r.flags.join("；") || "未见明显混杂")}${detail("固定安排日 eTST", formatHours(r.workSleep))}${detail("自由作息日 eTST", formatHours(r.freeSleep))}${detail("自报平均时长", formatHours(r.selfReportedSleep))}${detail("模式起源", labelFor("onset",a.q22))}${detail("与家人相比", labelFor("familyCompare",a.q23))}${detail("家族短睡", labelFor("family",a.q24))}${detail("短睡后状态", labelFor("shortDay",a.q13))}${detail("恢复睡眠", labelFor("rebound",a.q14))}${detail("联系意愿", labelFor("followup",a.q33))}${detail("联系方式", a.q35 || "未提供")}</div></details></article>`;
-  }).join("");
+async function addRecordToGoogleSheet(entry) {
+  if (!GOOGLE_SCRIPT_URL) {
+    records.push(entry);
+    saveRecords();
+    useServer = false;
+    updateStorageStatus("尚未配置 Google Sheet，已暂存本地");
+    updateModeBanner();
+    updateAdminGate();
+    showToast("尚未配置 Google Sheet，已暂存到当前浏览器。");
+    return;
+  }
+
+  try {
+    const payload = await googleJsonp({
+      ...entry,
+      action: "submit",
+      environment: Array.isArray(entry.environment) ? entry.environment.join("|") : entry.environment || "",
+    });
+    if (!payload.ok) throw new Error(payload.error || "Google Sheet submit failed");
+    useServer = true;
+    adminRequired = true;
+    updateStorageStatus("已提交到 Google Sheet");
+    updateModeBanner();
+    updateAdminGate();
+    if (adminPin) {
+      await syncFromGoogleSheet();
+    }
+  } catch {
+    records.push(entry);
+    saveRecords();
+    useServer = false;
+    updateStorageStatus("Google Sheet 提交失败，已暂存本地");
+    updateModeBanner();
+    updateAdminGate();
+    showToast("Google Sheet 提交失败，已暂存到当前浏览器。");
+  }
 }
 
-function detail(label, value) { return `<div><b>${label}</b>${escapeHtml(value || "—")}</div>`; }
-function showLoginError(message) { els.loginError.textContent = message; els.loginError.hidden = false; }
-
-function exportCsv() {
-  if (!records.length) return showToast("当前没有可导出的新版记录。");
-  const headers = ["姓名","提交时间","初筛分类","固定安排日eTST","自由作息日eTST","一周加权eTST","补偿量","困倦总分","复核线索","联系意愿","联系方式",...Array.from({length:35},(_,i)=>`Q${i+1}`)];
-  const rows = records.map(r => { const a=r.answers; const q = Array.from({length:35},(_,i) => questionValue(a,i+1)); return [r.participantId,r.createdAt,r.result.classification,r.result.workSleep,r.result.freeSleep,r.result.weightedSleep,r.result.compensation,r.result.essTotal,r.result.flags.join("；"),a.q33,a.q35,...q]; });
-  const csv = [headers,...rows].map(row => row.map(csvCell).join(",")).join("\n");
-  const blob = new Blob(["\ufeff"+csv], {type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob); const link=document.createElement("a"); link.href=url; link.download=`睡眠初筛记录_${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(url);
+function normalizeRecord(record) {
+  [
+    "sleepLatency",
+    "awakenings",
+    "napMinutes",
+    "activityLevel",
+    "stress",
+    "sleepQuality",
+    "recovery",
+    "daytimeSleepiness",
+  ].forEach((key) => {
+    record[key] = record[key] === "" || record[key] == null ? "" : Number(record[key]);
+  });
+  record.napMinutes = Number.isFinite(record.napMinutes) ? record.napMinutes : 0;
+  record.environment = Array.isArray(record.environment)
+    ? record.environment
+    : String(record.environment || "")
+        .split("|")
+        .filter(Boolean);
 }
 
-function questionValue(a, n) {
-  if ([5,6,7,8].includes(n)) return [a[`q${n}work`] || "",a[`q${n}free`] || ""].join("|");
-  if (n === 10) return `${a.q10h || 0}h${a.q10m || 0}m`;
-  if (n === 11) return [a.q11 || "",a.q11minutes || ""].join("|");
-  if (n === 15) return Array.from({length:8},(_,j)=>a[`q15_${j+1}`] ?? "").join("|");
-  if (n === 24) return [a.q24 || "",a.q24count || "",a.q24relation || ""].join("|");
-  if (n === 26) return [a.q26_1 || "",a.q26_2 || ""].join("|");
-  if (n === 30) return asArray(a.q30).join("|");
-  if (n === 31) return [asArray(a.q31).join("+"),a.q31detail || ""].join("|");
-  return a[`q${n}`] || "";
+function loadRecords() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    return parsed.map((record) => {
+      normalizeRecord(record);
+      return record;
+    });
+  } catch {
+    return [];
+  }
+}
+
+function saveRecords() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+}
+
+function updateStorageStatus(message = "") {
+  els.storageStatus.textContent = message || (useServer ? "在线共享提交已连接" : "当前为本地试用数据");
+}
+
+function updateModeBanner() {
+  if (!els.modeBanner) return;
+  if (isGoogleBackend() && !GOOGLE_SCRIPT_URL) {
+    els.modeBanner.classList.add("show");
+    els.modeBanner.innerHTML =
+      "<strong>免费问卷模式：</strong>请先在 config.js 填入 Google Apps Script Web App URL。填好并发布到 GitHub Pages 后，不同电脑提交的数据会进入同一个 Google Sheet。";
+    return;
+  }
+  if (isGoogleBackend()) {
+    els.modeBanner.classList.remove("show");
+    els.modeBanner.textContent = "";
+    return;
+  }
+  if (!API_ENDPOINT) {
+    els.modeBanner.classList.add("show");
+    els.modeBanner.innerHTML =
+      "<strong>本地文件预览：</strong>这里填写的数据只保存在当前浏览器。要免费跨电脑汇总，请使用 GitHub Pages + Google Sheet 模式。";
+    return;
+  }
+  if (!useServer) {
+    els.modeBanner.classList.add("show");
+    els.modeBanner.innerHTML =
+      "<strong>共享服务未连接：</strong>当前页面暂时无法连接服务器，提交会退回到本地暂存。";
+    return;
+  }
+  els.modeBanner.classList.remove("show");
+  els.modeBanner.textContent = "";
+}
+
+function updateAdminGate() {
+  if (!els.adminGate) return;
+  const googleMode = isGoogleBackend();
+  const googleMissing = googleMode && !GOOGLE_SCRIPT_URL;
+  const fileMode = !API_ENDPOINT && !googleMode;
+  els.adminGate.classList.toggle("authorized", Boolean(adminPin) || (useServer && !adminRequired));
+  els.adminPinInput.disabled = fileMode || googleMissing;
+  els.adminLogin.disabled = fileMode || googleMissing;
+  els.adminLogout.hidden = !adminPin;
+
+  if (googleMissing) {
+    els.adminGateTitle.textContent = "等待连接 Google Sheet";
+    els.adminGateText.textContent = "请先在 config.js 中填入 Apps Script Web App URL。填好后，受试者提交会免费写入 Google Sheet。";
+    return;
+  }
+
+  if (fileMode) {
+    els.adminGateTitle.textContent = "当前不是共享数据模式";
+    els.adminGateText.textContent = "你现在打开的是本地 HTML 文件，无法读取其他电脑提交的数据。请使用 GitHub Pages + Google Apps Script 免费方案。";
+    return;
+  }
+
+  if (adminRequired && !adminPin) {
+    els.adminGateTitle.textContent = "研究端登录";
+    els.adminGateText.textContent = "受试者可以公开提交；研究人员输入 PIN 后，才能查看统计、记录表和导出 CSV。";
+    return;
+  }
+
+  if (adminPin) {
+    els.adminGateTitle.textContent = "研究端已登录";
+    els.adminGateText.textContent = "正在显示共享服务器中的受试者记录。需要重新拉取数据时，可再次点击登录研究端。";
+    return;
+  }
+
+  els.adminGateTitle.textContent = "共享数据已显示";
+  els.adminGateText.textContent = googleMode
+    ? "当前正在显示 Google Sheet 中的受试者记录。"
+    : "当前服务器没有设置研究端 PIN。正式收集时建议设置 ADMIN_PIN，避免公开暴露研究记录。";
+}
+
+function isGoogleBackend() {
+  return BACKEND_MODE === "free-google-sheets";
 }
 
 function googleJsonp(params) {
-  return new Promise((resolve,reject) => {
-    const callbackName = `sleepScreenCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const script = document.createElement("script"); const url = new URL(GOOGLE_SCRIPT_URL);
-    Object.entries(params).forEach(([key,val]) => url.searchParams.set(key, val == null ? "" : String(val))); url.searchParams.set("callback",callbackName);
-    const timer=setTimeout(()=>{cleanup();reject(new Error("连接超时"));},20000);
-    function cleanup(){clearTimeout(timer);script.remove();delete window[callbackName];}
-    window[callbackName]=payload=>{cleanup();resolve(payload||{});}; script.onerror=()=>{cleanup();reject(new Error("网络连接失败"));}; script.src=url.toString(); document.head.appendChild(script);
+  return new Promise((resolve, reject) => {
+    const callbackName = `sleepReportCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const script = document.createElement("script");
+    const url = new URL(GOOGLE_SCRIPT_URL);
+    Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value ?? ""));
+    url.searchParams.set("callback", callbackName);
+
+    const timer = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("Google Sheet request timed out"));
+    }, 15000);
+
+    function cleanup() {
+      window.clearTimeout(timer);
+      script.remove();
+      delete window[callbackName];
+    }
+
+    window[callbackName] = (payload) => {
+      cleanup();
+      resolve(payload || {});
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("Google Sheet request failed"));
+    };
+
+    script.src = url.toString();
+    document.head.appendChild(script);
   });
 }
 
-function labelFor(group, code) { return options[group]?.find(([v]) => v === code)?.[1] || code || ""; }
-function formatHours(hours) { const n=Number(hours); if(!Number.isFinite(n)) return "—"; const h=Math.floor(n); const m=Math.round((n-h)*60); return `${h} 小时${m ? ` ${m} 分` : ""}`; }
-function formatSignedHours(hours) { const n=Number(hours); if(!Number.isFinite(n)) return "—"; const sign=n>0?"+":n<0?"−":""; return `${sign}${formatHours(Math.abs(n))}`; }
-function formatDate(value) { const date=new Date(value); return Number.isNaN(date.getTime()) ? String(value||"") : date.toLocaleString("zh-CN",{hour12:false}); }
-function csvCell(value) { const s=String(value??""); return /[",\n]/.test(s) ? `"${s.replaceAll('"','""')}"` : s; }
-function escapeHtml(value) { return String(value??"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
-function showToast(message) { els.toast.textContent=message; els.toast.classList.add("show"); setTimeout(()=>els.toast.classList.remove("show"),2800); }
+function submitGoogleForm(entry) {
+  return new Promise((resolve) => {
+    const iframeName = `sleep_submit_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const iframe = document.createElement("iframe");
+    iframe.name = iframeName;
+    iframe.hidden = true;
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = GOOGLE_SCRIPT_URL;
+    form.target = iframeName;
+    form.hidden = true;
+
+    const payload = {
+      ...entry,
+      action: "submit",
+      environment: Array.isArray(entry.environment) ? entry.environment.join("|") : entry.environment || "",
+    };
+
+    Object.entries(payload).forEach(([key, value]) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = key;
+      input.value = value == null ? "" : String(value);
+      form.appendChild(input);
+    });
+
+    let resolved = false;
+    function finish() {
+      if (resolved) return;
+      resolved = true;
+      window.setTimeout(() => {
+        iframe.remove();
+        form.remove();
+      }, 500);
+      resolve();
+    }
+
+    iframe.addEventListener("load", finish);
+    document.body.append(iframe, form);
+    form.submit();
+    window.setTimeout(finish, 1800);
+  });
+}
+
+function postGoogleAction(payload) {
+  return new Promise((resolve) => {
+    const iframeName = `sleep_action_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const iframe = document.createElement("iframe");
+    iframe.name = iframeName;
+    iframe.hidden = true;
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = GOOGLE_SCRIPT_URL;
+    form.target = iframeName;
+    form.hidden = true;
+
+    Object.entries(payload).forEach(([key, value]) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = key;
+      input.value = value == null ? "" : String(value);
+      form.appendChild(input);
+    });
+
+    let resolved = false;
+    function finish() {
+      if (resolved) return;
+      resolved = true;
+      window.setTimeout(() => {
+        iframe.remove();
+        form.remove();
+      }, 500);
+      resolve();
+    }
+
+    iframe.addEventListener("load", finish);
+    document.body.append(iframe, form);
+    form.submit();
+    window.setTimeout(finish, 1200);
+  });
+}
+
+function getFilteredRecords() {
+  const participant = els.filterParticipant.value.trim().toLowerCase();
+  const start = els.filterStart.value;
+  const end = els.filterEnd.value;
+  return records
+    .filter((record) => {
+      const matchesParticipant =
+        !participant || String(record.participantId || "").toLowerCase().includes(participant);
+      const matchesStart = !start || record.sleepDate >= start;
+      const matchesEnd = !end || record.sleepDate <= end;
+      return matchesParticipant && matchesStart && matchesEnd;
+    })
+    .sort((a, b) => String(a.sleepDate).localeCompare(String(b.sleepDate)));
+}
+
+function render() {
+  const data = getFilteredRecords();
+  updateRangeLabel(data);
+  renderMetrics(data);
+  drawTrendChart(data);
+  drawQualityChart(data);
+  renderFactors(data);
+  renderParticipantSummary(data);
+  renderInsights(data);
+  renderTable(data);
+}
+
+function updateRangeLabel(data) {
+  if (!records.length) {
+    els.rangeLabel.textContent = "暂无记录";
+    return;
+  }
+  if (!data.length) {
+    els.rangeLabel.textContent = "筛选结果为空";
+    return;
+  }
+  const dates = data.map((record) => record.sleepDate).filter(Boolean).sort();
+  const uniqueParticipants = new Set(data.map((record) => record.participantId).filter(Boolean));
+  const dateText = dates.length ? `${dates[0]} 至 ${dates[dates.length - 1]}` : "全部日期";
+  els.rangeLabel.textContent = `${dateText} · ${uniqueParticipants.size || 0} 位受试者`;
+}
+
+function renderMetrics(data) {
+  const durations = data.map(sleepDurationHours).filter(isFiniteNumber);
+  const efficiencies = data.map(sleepEfficiency).filter(isFiniteNumber);
+  const qualities = data.map((record) => record.sleepQuality).filter(isFiniteNumber);
+  const subjects = new Set(data.map((record) => record.participantId).filter(Boolean));
+
+  els.metrics.subjects.textContent = subjects.size;
+  els.metrics.count.textContent = data.length;
+  els.metrics.duration.textContent = durations.length ? formatHours(avg(durations)) : "--";
+  els.metrics.efficiency.textContent = efficiencies.length ? `${Math.round(avg(efficiencies))}%` : "--";
+  els.metrics.quality.textContent = qualities.length ? avg(qualities).toFixed(1) : "--";
+}
+
+function renderFactors(data) {
+  const factors = [
+    ["咖啡因", (record) => record.caffeine === "yes"],
+    ["饮酒", (record) => record.alcohol === "yes"],
+    ["剧烈运动", (record) => record.exercise === "yes"],
+    ["身体不适", (record) => record.discomfort === "yes"],
+    ["明显压力", (record) => Number(record.stress) >= 3],
+    ["设备异常", hasDeviceIssue],
+    ["环境变化", (record) => record.environment.length || record.environmentOther],
+  ];
+
+  if (!data.length) {
+    els.factorList.innerHTML = `<div class="empty-state">暂无可统计数据</div>`;
+    return;
+  }
+
+  els.factorList.innerHTML = factors
+    .map(([label, test]) => {
+      const count = data.filter(test).length;
+      const percent = Math.round((count / data.length) * 100);
+      return `
+        <div class="factor-row">
+          <span>${label}</span>
+          <div class="factor-bar" aria-label="${label} ${percent}%"><span style="width: ${percent}%"></span></div>
+          <strong>${count}/${data.length}</strong>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderParticipantSummary(data) {
+  if (!data.length) {
+    els.participantBody.innerHTML = `
+      <tr>
+        <td colspan="7" class="empty-state">暂无可汇总的受试者记录。</td>
+      </tr>
+    `;
+    return;
+  }
+
+  const grouped = new Map();
+  data.forEach((record) => {
+    const key = record.participantId || "未填写";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(record);
+  });
+
+  els.participantBody.innerHTML = [...grouped.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([participantId, rows]) => {
+      const durations = rows.map(sleepDurationHours).filter(isFiniteNumber);
+      const efficiencies = rows.map(sleepEfficiency).filter(isFiniteNumber);
+      const qualities = rows.map((record) => record.sleepQuality).filter(isFiniteNumber);
+      const lowQuality = rows.filter((record) => Number(record.sleepQuality) <= 2).length;
+      const deviceIssues = rows.filter(hasDeviceIssue).length;
+      return `
+        <tr>
+          <td><strong>${escapeHtml(participantId)}</strong></td>
+          <td>${rows.length}</td>
+          <td>${durations.length ? formatHours(avg(durations)) : "--"}</td>
+          <td>${efficiencies.length ? `${Math.round(avg(efficiencies))}%` : "--"}</td>
+          <td>${qualities.length ? avg(qualities).toFixed(1) : "--"}</td>
+          <td>${lowQuality}</td>
+          <td>${deviceIssues}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function renderInsights(data) {
+  if (!data.length) {
+    els.insights.innerHTML = `<div class="empty-state">录入或导入记录后，这里会显示自动提示。</div>`;
+    return;
+  }
+
+  const insights = [];
+  const lowQuality = data.filter((record) => Number(record.sleepQuality) <= 2);
+  const shortSleep = data.filter((record) => sleepDurationHours(record) < 6);
+  const lowEfficiency = data.filter((record) => sleepEfficiency(record) < 85);
+  const deviceIssues = data.filter(hasDeviceIssue);
+  const caffeineWithLowQuality = data.filter(
+    (record) => record.caffeine === "yes" && Number(record.sleepQuality) <= 3,
+  );
+  const sleepy = data.filter((record) => Number(record.daytimeSleepiness) >= 4);
+
+  if (lowQuality.length) {
+    insights.push([
+      "低睡眠质量记录",
+      `${lowQuality.length} 条记录的主观睡眠质量为“较差”或“很差”，建议优先查看对应日期的身体不适、压力、环境和设备记录。`,
+      "warning",
+    ]);
+  }
+  if (shortSleep.length) {
+    insights.push([
+      "睡眠时长偏短",
+      `${shortSleep.length} 条记录的估计睡眠时长少于 6 小时，可与设备总睡眠时间做一致性检查。`,
+      "warning",
+    ]);
+  }
+  if (lowEfficiency.length) {
+    insights.push([
+      "睡眠效率偏低",
+      `${lowEfficiency.length} 条记录的睡眠效率低于 85%，可能存在较长卧床清醒时间或时间填写误差。`,
+      "warning",
+    ]);
+  }
+  if (deviceIssues.length) {
+    insights.push([
+      "设备数据需要标记",
+      `${deviceIssues.length} 条记录出现手表未整晚佩戴或枕垫异常，分析设备数据时建议单独标注。`,
+      "warning",
+    ]);
+  }
+  if (caffeineWithLowQuality.length) {
+    insights.push([
+      "咖啡因相关线索",
+      `${caffeineWithLowQuality.length} 条记录同时存在咖啡因摄入和中低睡眠质量，可进一步查看摄入时间。`,
+      "",
+    ]);
+  }
+  if (sleepy.length) {
+    insights.push([
+      "白天困倦明显",
+      `${sleepy.length} 条记录显示白天非常困或影响日常活动，可作为次日功能状态指标。`,
+      "",
+    ]);
+  }
+
+  if (!insights.length) {
+    insights.push(["整体稳定", "当前筛选范围内未出现明显异常聚集。", ""]);
+  }
+
+  els.insights.innerHTML = insights
+    .map(
+      ([title, body, type]) => `
+        <div class="insight ${type}">
+          <strong>${title}</strong>
+          <p>${body}</p>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function renderTable(data) {
+  if (!data.length) {
+    els.recordsBody.innerHTML = `
+      <tr>
+        <td colspan="9" class="empty-state">暂无记录。可以新增记录、载入示例或导入 CSV。</td>
+      </tr>
+    `;
+    return;
+  }
+
+  els.recordsBody.innerHTML = data
+    .map((record) => {
+      const factors = getFactorTags(record);
+      return `
+        <tr>
+          <td><strong>${escapeHtml(record.sleepDate || "-")}</strong><span>${escapeHtml(record.formDate || "")}</span></td>
+          <td>${escapeHtml(record.participantId || "-")}</td>
+          <td>${formatHours(sleepDurationHours(record))}</td>
+          <td>${formatPercent(sleepEfficiency(record))}</td>
+          <td>${qualityLabels[Number(record.sleepQuality) - 1] || "-"}</td>
+          <td>${record.awakenings === "" ? "不确定" : record.awakenings}</td>
+          <td><div class="tag-list">${factors.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("") || "-"}</div></td>
+          <td>${escapeHtml(watchLabels[record.watchWear] || "-")} / ${escapeHtml(padLabels[record.padStatus] || "-")}</td>
+          <td><button class="button danger" type="button" data-delete-id="${record.id}">删除</button></td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  els.recordsBody.querySelectorAll("[data-delete-id]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await deleteRecord(button.dataset.deleteId);
+      render();
+      showToast("记录已删除。");
+    });
+  });
+}
+
+function drawTrendChart(data) {
+  const canvas = els.trendChart;
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  clearCanvas(ctx, width, height);
+
+  const plotted = data.filter((record) => isFiniteNumber(sleepDurationHours(record)));
+  if (!plotted.length) {
+    drawEmptyChart(ctx, width, height, "暂无趋势数据");
+    return;
+  }
+
+  const padding = { top: 24, right: 42, bottom: 58, left: 54 };
+  const chartW = width - padding.left - padding.right;
+  const chartH = height - padding.top - padding.bottom;
+  const maxHours = Math.max(10, Math.ceil(Math.max(...plotted.map(sleepDurationHours))));
+  const minHours = Math.min(4, Math.floor(Math.min(...plotted.map(sleepDurationHours))));
+
+  drawGrid(ctx, padding, chartW, chartH, 4);
+
+  ctx.fillStyle = "#657068";
+  ctx.font = "13px system-ui";
+  for (let i = 0; i <= 4; i += 1) {
+    const value = minHours + ((maxHours - minHours) * (4 - i)) / 4;
+    const y = padding.top + (chartH * i) / 4;
+    ctx.fillText(`${value.toFixed(0)}h`, 12, y + 4);
+  }
+
+  const xFor = (index) =>
+    padding.left + (plotted.length === 1 ? chartW / 2 : (chartW * index) / (plotted.length - 1));
+  const yForHours = (hours) =>
+    padding.top + chartH - ((hours - minHours) / (maxHours - minHours || 1)) * chartH;
+
+  ctx.strokeStyle = "#2f7258";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  plotted.forEach((record, index) => {
+    const x = xFor(index);
+    const y = yForHours(sleepDurationHours(record));
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  plotted.forEach((record, index) => {
+    const x = xFor(index);
+    const y = yForHours(sleepDurationHours(record));
+    const quality = Number(record.sleepQuality) || 3;
+    ctx.fillStyle = quality >= 4 ? "#2f7258" : quality <= 2 ? "#b94b4b" : "#b8831d";
+    ctx.beginPath();
+    ctx.arc(x, y, 5 + quality, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.fillStyle = "#657068";
+  ctx.font = "12px system-ui";
+  plotted.forEach((record, index) => {
+    if (plotted.length > 12 && index % Math.ceil(plotted.length / 8) !== 0) return;
+    const x = xFor(index);
+    ctx.save();
+    ctx.translate(x, height - 26);
+    ctx.rotate(-Math.PI / 5);
+    ctx.fillText(String(record.sleepDate).slice(5), 0, 0);
+    ctx.restore();
+  });
+
+  ctx.fillStyle = "#18201c";
+  ctx.font = "14px system-ui";
+  ctx.fillText("睡眠时长", padding.left, 20);
+  ctx.fillStyle = "#657068";
+  ctx.fillText("点大小代表主观质量评分", width - 190, 20);
+}
+
+function drawQualityChart(data) {
+  const canvas = els.qualityChart;
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  clearCanvas(ctx, width, height);
+
+  if (!data.length) {
+    drawEmptyChart(ctx, width, height, "暂无分布数据");
+    return;
+  }
+
+  const counts = [1, 2, 3, 4, 5].map(
+    (score) => data.filter((record) => Number(record.sleepQuality) === score).length,
+  );
+  const max = Math.max(1, ...counts);
+  const colors = ["#b94b4b", "#d17c4a", "#b8831d", "#609968", "#2f7258"];
+  const padding = { top: 24, right: 24, bottom: 46, left: 38 };
+  const chartW = width - padding.left - padding.right;
+  const chartH = height - padding.top - padding.bottom;
+  const barW = chartW / 5 - 14;
+
+  drawGrid(ctx, padding, chartW, chartH, 3);
+
+  counts.forEach((count, index) => {
+    const x = padding.left + index * (chartW / 5) + 7;
+    const barH = (count / max) * chartH;
+    const y = padding.top + chartH - barH;
+    ctx.fillStyle = colors[index];
+    roundRect(ctx, x, y, barW, barH, 7);
+    ctx.fill();
+    ctx.fillStyle = "#18201c";
+    ctx.font = "13px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(String(count), x + barW / 2, y - 8);
+    ctx.fillStyle = "#657068";
+    ctx.fillText(qualityLabels[index], x + barW / 2, height - 20);
+  });
+  ctx.textAlign = "left";
+}
+
+function clearCanvas(ctx, width, height) {
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#fbfcfb";
+  ctx.fillRect(0, 0, width, height);
+}
+
+function drawGrid(ctx, padding, chartW, chartH, lines) {
+  ctx.strokeStyle = "#dbe3dc";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= lines; i += 1) {
+    const y = padding.top + (chartH * i) / lines;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(padding.left + chartW, y);
+    ctx.stroke();
+  }
+}
+
+function drawEmptyChart(ctx, width, height, text) {
+  ctx.fillStyle = "#657068";
+  ctx.font = "16px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText(text, width / 2, height / 2);
+  ctx.textAlign = "left";
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function loadDemoData() {
+  const demo = [
+    {
+      participantId: "S001",
+      formDate: "2026-07-01",
+      sleepDate: "2026-06-30",
+      bedTime: "23:10",
+      trySleepTime: "23:30",
+      wakeTime: "06:40",
+      riseTime: "06:55",
+      sleepLatency: 30,
+      awakenings: 1,
+      awakeningNote: "",
+      napStatus: "no",
+      napMinutes: 0,
+      exercise: "yes",
+      activityLevel: 4,
+      exerciseNote: "18:30 跑步",
+      caffeine: "yes",
+      caffeineNote: "14:00 咖啡 1 杯",
+      alcohol: "no",
+      alcoholNote: "",
+      medication: "no",
+      medicationNote: "",
+      discomfort: "no",
+      stress: 1,
+      bodyMoodNote: "",
+      environment: [],
+      environmentOther: "",
+      watchWear: "all",
+      padStatus: "normal",
+      deviceNote: "",
+      sleepQuality: 4,
+      recovery: 4,
+      daytimeSleepiness: 2,
+      additionalNote: "",
+    },
+    {
+      participantId: "S001",
+      formDate: "2026-07-02",
+      sleepDate: "2026-07-01",
+      bedTime: "00:15",
+      trySleepTime: "00:35",
+      wakeTime: "06:05",
+      riseTime: "06:30",
+      sleepLatency: 60,
+      awakenings: 2.5,
+      awakeningNote: "半夜醒两次",
+      napStatus: "yes",
+      napMinutes: 35,
+      exercise: "no",
+      activityLevel: 2,
+      exerciseNote: "",
+      caffeine: "yes",
+      caffeineNote: "19:00 浓茶",
+      alcohol: "no",
+      alcoholNote: "",
+      medication: "no",
+      medicationNote: "",
+      discomfort: "yes",
+      stress: 3,
+      bodyMoodNote: "头痛，工作压力大",
+      environment: ["noise"],
+      environmentOther: "",
+      watchWear: "all",
+      padStatus: "normal",
+      deviceNote: "",
+      sleepQuality: 2,
+      recovery: 2,
+      daytimeSleepiness: 4,
+      additionalNote: "",
+    },
+    {
+      participantId: "S002",
+      formDate: "2026-07-02",
+      sleepDate: "2026-07-01",
+      bedTime: "22:40",
+      trySleepTime: "22:55",
+      wakeTime: "06:50",
+      riseTime: "07:10",
+      sleepLatency: 15,
+      awakenings: 0,
+      awakeningNote: "",
+      napStatus: "no",
+      napMinutes: 0,
+      exercise: "yes",
+      activityLevel: 5,
+      exerciseNote: "下午游泳",
+      caffeine: "no",
+      caffeineNote: "",
+      alcohol: "no",
+      alcoholNote: "",
+      medication: "no",
+      medicationNote: "",
+      discomfort: "no",
+      stress: 1,
+      bodyMoodNote: "",
+      environment: [],
+      environmentOther: "",
+      watchWear: "all",
+      padStatus: "normal",
+      deviceNote: "",
+      sleepQuality: 5,
+      recovery: 5,
+      daytimeSleepiness: 1,
+      additionalNote: "",
+    },
+    {
+      participantId: "S002",
+      formDate: "2026-07-03",
+      sleepDate: "2026-07-02",
+      bedTime: "23:50",
+      trySleepTime: "00:10",
+      wakeTime: "05:55",
+      riseTime: "06:20",
+      sleepLatency: 30,
+      awakenings: 4,
+      awakeningNote: "起夜较多",
+      napStatus: "unknown",
+      napMinutes: 0,
+      exercise: "no",
+      activityLevel: 3,
+      exerciseNote: "",
+      caffeine: "no",
+      caffeineNote: "",
+      alcohol: "yes",
+      alcoholNote: "21:00 啤酒",
+      medication: "no",
+      medicationNote: "",
+      discomfort: "no",
+      stress: 2,
+      bodyMoodNote: "",
+      environment: ["temperature"],
+      environmentOther: "",
+      watchWear: "partial",
+      padStatus: "moved",
+      deviceNote: "手表半夜松动",
+      sleepQuality: 2,
+      recovery: 2,
+      daytimeSleepiness: 4,
+      additionalNote: "",
+    },
+  ].map((record) => ({
+    ...record,
+    id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+    createdAt: new Date().toISOString(),
+  }));
+
+  records = [...records, ...demo];
+  saveRecords();
+  render();
+  showToast("已载入 4 条示例记录。");
+}
+
+function exportCsv() {
+  if (!records.length) {
+    showToast("暂无数据可导出。");
+    return;
+  }
+  const headers = [
+    "id",
+    "participantId",
+    "formDate",
+    "sleepDate",
+    "bedTime",
+    "trySleepTime",
+    "wakeTime",
+    "riseTime",
+    "sleepDurationHours",
+    "timeInBedHours",
+    "sleepEfficiency",
+    "sleepLatency",
+    "awakenings",
+    "napStatus",
+    "napMinutes",
+    "exercise",
+    "activityLevel",
+    "caffeine",
+    "alcohol",
+    "medication",
+    "discomfort",
+    "stress",
+    "environment",
+    "environmentOther",
+    "watchWear",
+    "padStatus",
+    "sleepQuality",
+    "recovery",
+    "daytimeSleepiness",
+    "awakeningNote",
+    "exerciseNote",
+    "caffeineNote",
+    "alcoholNote",
+    "medicationNote",
+    "bodyMoodNote",
+    "deviceNote",
+    "additionalNote",
+  ];
+  const rows = records.map((record) =>
+    headers.map((header) => {
+      if (header === "sleepDurationHours") return toFixedOrBlank(sleepDurationHours(record));
+      if (header === "timeInBedHours") return toFixedOrBlank(timeInBedHours(record));
+      if (header === "sleepEfficiency") return toFixedOrBlank(sleepEfficiency(record), 1);
+      if (header === "environment") return (record.environment || []).join("|");
+      return record[header] ?? "";
+    }),
+  );
+  const csv = [headers, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `sleep-questionnaire-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function importCsv(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const imported = parseCsv(String(reader.result || ""));
+      const normalized = imported.map((row) => {
+        const record = {
+          ...row,
+          id: row.id || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`),
+          environment: String(row.environment || "")
+            .split("|")
+            .filter(Boolean),
+        };
+        normalizeRecord(record);
+        return record;
+      });
+      records = [...records, ...normalized];
+      saveRecords();
+      render();
+      showToast(`已导入 ${normalized.length} 条记录。`);
+    } catch {
+      showToast("CSV 导入失败，请检查表头和格式。");
+    } finally {
+      event.target.value = "";
+    }
+  };
+  reader.readAsText(file, "utf-8");
+}
+
+async function clearAllRecords() {
+  if (!records.length) {
+    showToast("当前没有数据。");
+    return;
+  }
+  const ok = window.confirm("确定清空所有记录吗？此操作不可撤销。");
+  if (!ok) return;
+  if (isGoogleBackend() && GOOGLE_SCRIPT_URL) {
+    if (!adminPin) {
+      showToast("请先登录研究端。");
+      return;
+    }
+    await postGoogleAction({ action: "clear", pin: adminPin });
+    await syncFromGoogleSheet();
+    showToast("所有记录已清空。");
+    return;
+  }
+  if (useServer) {
+    try {
+      const response = await fetch(API_ENDPOINT, { method: "DELETE", headers: apiHeaders() });
+      if (!response.ok) throw new Error("Delete failed");
+      records = [];
+    } catch {
+      showToast("在线数据清空失败。");
+      return;
+    }
+  } else {
+    records = [];
+    saveRecords();
+  }
+  render();
+  showToast("所有记录已清空。");
+}
+
+async function deleteRecord(id) {
+  if (isGoogleBackend() && GOOGLE_SCRIPT_URL) {
+    if (!adminPin) {
+      showToast("请先登录研究端。");
+      return;
+    }
+    await postGoogleAction({ action: "delete", pin: adminPin, id });
+    await syncFromGoogleSheet();
+    return;
+  }
+  if (!useServer) {
+    records = records.filter((record) => record.id !== id);
+    saveRecords();
+    return;
+  }
+  try {
+    const response = await fetch(`${API_ENDPOINT}/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: apiHeaders(),
+    });
+    if (!response.ok) throw new Error("Delete failed");
+    records = await response.json();
+    records.forEach(normalizeRecord);
+  } catch {
+    showToast("在线删除失败。");
+  }
+}
+
+function apiHeaders(extra = {}) {
+  return adminPin ? { ...extra, "X-Admin-Pin": adminPin } : extra;
+}
+
+async function handleAdminLogin() {
+  if (isGoogleBackend() && !GOOGLE_SCRIPT_URL) {
+    showToast("请先在 config.js 填入 Apps Script Web App URL。");
+    return;
+  }
+  if (!isGoogleBackend() && !API_ENDPOINT) {
+    showToast("当前是本地文件模式，无法读取共享数据。");
+    return;
+  }
+  const pin = els.adminPinInput.value.trim();
+  if (pin) {
+    adminPin = pin;
+    sessionStorage.setItem("sleep-report-admin-pin", adminPin);
+  }
+  await syncFromServer();
+  if (adminRequired) {
+    showToast("PIN 不正确或尚未登录研究端。");
+    return;
+  }
+  els.adminPinInput.value = "";
+  showToast("研究端数据已刷新。");
+}
+
+function handleAdminLogout() {
+  adminPin = "";
+  sessionStorage.removeItem("sleep-report-admin-pin");
+  records = [];
+  adminRequired = true;
+  updateAdminGate();
+  render();
+  showToast("已退出研究端。");
+}
+
+async function copyPublicLink() {
+  const url = window.location.href.split("#")[0];
+  if (location.protocol === "file:") {
+    showToast("当前是本地文件地址；正式收集请复制 GitHub Pages 的公开网址。");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast("公开链接已复制。");
+  } catch {
+    showToast(url);
+  }
+}
+
+function getFactorTags(record) {
+  const tags = [];
+  if (record.caffeine === "yes") tags.push("咖啡因");
+  if (record.alcohol === "yes") tags.push("饮酒");
+  if (record.exercise === "yes") tags.push("运动");
+  if (record.discomfort === "yes") tags.push("身体不适");
+  if (Number(record.stress) >= 3) tags.push("明显压力");
+  if (record.environment.length) tags.push(...record.environment.map((key) => environmentLabels[key] || key));
+  if (record.environmentOther) tags.push(record.environmentOther);
+  return tags;
+}
+
+function hasDeviceIssue(record) {
+  return record.watchWear !== "all" || record.padStatus !== "normal";
+}
+
+function timeToMinutes(time) {
+  if (!time || !time.includes(":")) return NaN;
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function minutesBetween(startTime, endTime) {
+  const start = timeToMinutes(startTime);
+  let end = timeToMinutes(endTime);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return NaN;
+  if (end < start) end += 24 * 60;
+  return end - start;
+}
+
+function sleepDurationHours(record) {
+  return minutesBetween(record.trySleepTime, record.riseTime) / 60;
+}
+
+function timeInBedHours(record) {
+  return minutesBetween(record.bedTime, record.riseTime) / 60;
+}
+
+function sleepEfficiency(record) {
+  const sleep = sleepDurationHours(record);
+  const inBed = timeInBedHours(record);
+  if (!isFiniteNumber(sleep) || !isFiniteNumber(inBed) || inBed <= 0) return NaN;
+  return Math.max(0, Math.min(100, (sleep / inBed) * 100));
+}
+
+function avg(values) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function isFiniteNumber(value) {
+  return Number.isFinite(Number(value));
+}
+
+function formatHours(value) {
+  if (!isFiniteNumber(value)) return "--";
+  const totalMinutes = Math.round(Number(value) * 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}小时${String(minutes).padStart(2, "0")}分`;
+}
+
+function formatPercent(value) {
+  return isFiniteNumber(value) ? `${Math.round(Number(value))}%` : "--";
+}
+
+function toFixedOrBlank(value, digits = 2) {
+  return isFiniteNumber(value) ? Number(value).toFixed(digits) : "";
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  if (/[",\n]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
+  return text;
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+    if (quoted) {
+      if (char === '"' && next === '"') {
+        cell += '"';
+        i += 1;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        cell += char;
+      }
+      continue;
+    }
+    if (char === '"') {
+      quoted = true;
+    } else if (char === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (char === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else if (char !== "\r") {
+      cell += char;
+    }
+  }
+  row.push(cell);
+  rows.push(row);
+
+  const [headers, ...body] = rows.filter((line) => line.some((value) => value.trim() !== ""));
+  return body.map((line) =>
+    Object.fromEntries(headers.map((header, index) => [header.replace(/^\uFEFF/, ""), line[index] || ""])),
+  );
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function showToast(message) {
+  els.toast.textContent = message;
+  els.toast.classList.add("show");
+  window.clearTimeout(showToast.timer);
+  showToast.timer = window.setTimeout(() => {
+    els.toast.classList.remove("show");
+  }, 2400);
+}

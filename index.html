@@ -3,104 +3,537 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="睡眠模式与习惯调查：从成年人自然多样的睡眠差异中识别睡眠表型，进而解析睡眠背后的生理与遗传调控机制。" />
-    <title>睡眠模式与习惯调查问卷</title>
+    <title>每日睡眠自我报告统计</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <a class="brand" href="#survey" aria-label="返回问卷首页">
-        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span><strong>睡眠模式与习惯调查</strong><small>Sleep Patterns &amp; Habits Survey</small></span>
-      </a>
-      <div class="status-pill" id="saveStatus" aria-live="polite">回答仅用于科研</div>
-    </header>
-
-    <main>
-      <section id="surveyView" class="survey-view">
-        <div class="hero">
-          <p class="kicker">睡眠表型研究 · 公开招募</p>
-          <h1>你的睡眠，<br />藏着不一样的答案</h1>
-          <p class="hero-copy">每个人需要的睡眠时长、习惯的作息、醒来后的感受都各不相同。我们想收集您真实的睡眠体验，从这些自然差异中识别不同的<strong>睡眠表型</strong>，进而探索决定睡眠的生理与遗传机制。您的每一份回答，都为我们理解人类睡眠机制补充一块重要的拼图。</p>
-          <div class="hero-meta">
-            <span>约 6–8 分钟</span><span>共 8 个部分</span><span>可随时退出</span><span>回答仅用于科研</span>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="页面导航">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div>
+            <h1>睡眠报告统计</h1>
+            <p>每日自我报告 · 研究录入</p>
           </div>
         </div>
 
-        <div class="consent-card" id="introCard">
-          <h2>开始之前，想先和您说清楚几件事</h2>
-          <ul>
-            <li><strong>这项研究想做什么：</strong>我们希望描绘成年人自然状态下多样的睡眠模式，识别不同的睡眠表型，并借此解析睡眠背后的生理与遗传调控机制。您的回答会帮助我们更好地理解“人为什么会这样睡”。</li>
-            <li><strong>参与完全自愿：</strong>是否填写由您自己决定，中途想停下随时可以退出，不会带来任何不利影响。</li>
-            <li><strong>您的隐私会被认真保护：</strong>回答仅用于科研分析，妥善保存；任何研究报告或论文中都不会出现能识别您身份的信息。</li>
-            <li><strong>可能的后续邀请：</strong>如果您的睡眠特征契合研究方向，我们或许会邀请您记录睡眠日记、佩戴体动记录设备等。到时会再次向您详细说明并征得您的同意。</li>
-            <li><strong>这不是医学诊断：</strong>本问卷用于科研初筛，不能替代诊断或治疗。如果睡眠问题已明显影响生活，建议及时咨询专业医生。</li>
-          </ul>
-          <label class="consent-check">
-            <input id="consent" type="checkbox" />
-            <span>我已阅读以上说明，自愿参加并同意提交本问卷。</span>
-          </label>
-          <button id="startSurvey" class="button primary large" type="button" disabled>我已了解，开始填写</button>
-          <p class="study-info">研究负责人 / 单位、伦理审查批号及联系方式请由研究团队在正式发放前补充。</p>
+        <nav class="nav-tabs" aria-label="主要视图">
+          <button class="nav-tab active" type="button" data-view="entry" aria-pressed="true">
+            <span class="nav-icon">＋</span>
+            <span>受试者填写</span>
+          </button>
+          <button class="nav-tab" type="button" data-view="dashboard" aria-pressed="false">
+            <span class="nav-icon">⌁</span>
+            <span>统计概览</span>
+          </button>
+          <button class="nav-tab" type="button" data-view="records" aria-pressed="false">
+            <span class="nav-icon">≡</span>
+            <span>研究记录</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span id="storageStatus">公开部署时建议连接在线数据库</span>
         </div>
+      </aside>
 
-        <div id="formShell" class="form-shell" hidden>
-          <aside class="progress-card" aria-label="问卷进度">
-            <div class="progress-summary"><span>填写进度</span><strong id="progressText">1 / 8</strong></div>
-            <div class="progress-track" aria-hidden="true"><span id="progressBar"></span></div>
-            <ol id="stepNav"></ol>
-          </aside>
+      <main class="workspace">
+        <section id="modeBanner" class="mode-banner" aria-live="polite"></section>
 
-          <form id="screeningForm" novalidate>
-            <div id="questionSections"></div>
-            <div class="form-actions">
-              <button id="previousStep" class="button secondary" type="button">上一步</button>
-              <button id="nextStep" class="button primary" type="button">下一步</button>
-              <button id="submitSurvey" class="button primary" type="submit" hidden>确认并提交</button>
+        <section class="toolbar" aria-label="筛选与导入导出">
+          <div class="toolbar-title">
+            <p>数据范围</p>
+            <strong id="rangeLabel">全部记录</strong>
+          </div>
+          <div class="toolbar-controls">
+            <label>
+              <span>研究编号</span>
+              <input id="filterParticipant" type="search" placeholder="全部" />
+            </label>
+            <label>
+              <span>开始日期</span>
+              <input id="filterStart" type="date" />
+            </label>
+            <label>
+              <span>结束日期</span>
+              <input id="filterEnd" type="date" />
+            </label>
+            <button class="button ghost" type="button" id="clearFilters">清除筛选</button>
+          </div>
+        </section>
+
+        <section id="adminGate" class="admin-gate" aria-live="polite">
+          <div>
+            <span class="intro-kicker">研究端</span>
+            <h3 id="adminGateTitle">查看共享数据</h3>
+            <p id="adminGateText">输入研究端 PIN 后，可以读取所有受试者提交的记录并导出 CSV。</p>
+          </div>
+          <div class="admin-login">
+            <label>
+              <span>研究端 PIN</span>
+              <input id="adminPinInput" type="password" autocomplete="current-password" placeholder="输入 PIN" />
+            </label>
+            <button class="button primary" type="button" id="adminLogin">登录研究端</button>
+            <button class="button ghost" type="button" id="adminLogout">退出</button>
+          </div>
+        </section>
+
+        <section id="dashboardView" class="view" aria-labelledby="dashboardTitle">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Dashboard</p>
+              <h2 id="dashboardTitle">睡眠与影响因素统计</h2>
+              <p class="section-note">这里会自动汇总所有受试者的自我报告，并按研究编号、日期和影响因素进行分析。</p>
             </div>
-            <p id="formError" class="form-error" role="alert" hidden></p>
-          </form>
-        </div>
-      </section>
-
-      <section id="successView" class="success-view" hidden>
-        <div class="success-card">
-          <div class="success-icon" aria-hidden="true">✓</div>
-          <p class="kicker">提交成功</p>
-          <h1>谢谢您，成为这项研究的一块拼图</h1>
-          <p>您的回答已安全提交给研究团队，会和其他参与者的数据一起，帮助我们描绘睡眠表型、解析睡眠机制。若您的睡眠特征契合后续研究，且您选择了愿意联系，研究人员可能会通过您留下的方式与您联系。</p>
-          <p class="success-note">本问卷用于科研初筛，不提供个人诊断或即时筛查结果。</p>
-          <button id="newResponse" class="button secondary" type="button">填写另一份问卷</button>
-        </div>
-      </section>
-
-      <section id="researchView" class="research-view" hidden>
-        <div class="research-header">
-          <div><p class="kicker">仅限研究人员</p><h1>初筛记录与判读</h1><p>判读依据来自文档附表，仅用于候选者优先级排序；最终判断须结合睡眠日记、体动记录或 PSG。</p></div>
-          <button id="leaveResearch" class="button secondary" type="button">返回公开问卷</button>
-        </div>
-        <div id="researchLogin" class="login-card">
-          <label><span>研究端 PIN</span><input id="researchPin" type="password" autocomplete="current-password" placeholder="请输入 PIN" /></label>
-          <button id="researchLoginButton" class="button primary" type="button">查看记录</button>
-          <p id="loginError" class="form-error" hidden></p>
-        </div>
-        <div id="researchDashboard" hidden>
-          <div class="research-toolbar">
-            <div class="metric"><span>已提交</span><strong id="responseCount">0</strong></div>
-            <div class="metric"><span>绿色优先候选</span><strong id="candidateCount">0</strong></div>
-            <label class="search-box"><span>搜索姓名</span><input id="recordSearch" type="search" placeholder="请输入姓名" /></label>
-            <button id="exportRecords" class="button secondary" type="button">导出 CSV</button>
-            <button id="refreshRecords" class="button primary" type="button">刷新记录</button>
+            <div class="actions">
+              <button class="button" type="button" id="loadDemo">载入示例</button>
+              <button class="button primary" type="button" data-view-target="entry">录入新记录</button>
+            </div>
           </div>
-          <div id="recordCards" class="record-cards"></div>
-        </div>
-      </section>
-    </main>
 
-    <footer>
-      <span>睡眠模式与习惯调查 · 科研初筛</span>
-      <button id="openResearch" type="button">研究人员入口</button>
-    </footer>
+          <div class="metric-grid" aria-label="核心指标">
+            <article class="metric-panel">
+              <span>受试者数</span>
+              <strong id="metricSubjects">0</strong>
+              <em>按研究编号去重</em>
+            </article>
+            <article class="metric-panel">
+              <span>记录数</span>
+              <strong id="metricCount">0</strong>
+              <em>筛选后自我报告</em>
+            </article>
+            <article class="metric-panel">
+              <span>平均睡眠时长</span>
+              <strong id="metricDuration">--</strong>
+              <em>起床时间 - 准备入睡时间</em>
+            </article>
+            <article class="metric-panel">
+              <span>平均睡眠效率</span>
+              <strong id="metricEfficiency">--</strong>
+              <em>睡眠时长 / 在床时间</em>
+            </article>
+            <article class="metric-panel">
+              <span>平均睡眠质量</span>
+              <strong id="metricQuality">--</strong>
+              <em>1 很差 · 5 很好</em>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <div>
+                  <h3>每日睡眠时长与质量</h3>
+                  <p>用于观察主观睡眠和时间记录是否同步变化</p>
+                </div>
+              </div>
+              <canvas id="trendChart" width="880" height="320" aria-label="每日睡眠趋势图"></canvas>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>睡眠质量分布</h3>
+                  <p>按 1-5 分统计</p>
+                </div>
+              </div>
+              <canvas id="qualityChart" width="420" height="300" aria-label="睡眠质量分布图"></canvas>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div>
+                  <h3>可能影响因素</h3>
+                  <p>咖啡因、饮酒、运动、身体不适、压力、设备异常</p>
+                </div>
+              </div>
+              <div id="factorList" class="factor-list"></div>
+            </section>
+
+            <section class="panel wide">
+              <div class="panel-heading">
+                <div>
+                  <h3>不同受试者汇总</h3>
+                  <p>每个研究编号的记录数、平均睡眠和异常标记</p>
+                </div>
+              </div>
+              <div class="table-wrap compact-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>研究编号</th>
+                      <th>记录数</th>
+                      <th>平均睡眠时长</th>
+                      <th>平均睡眠效率</th>
+                      <th>平均质量</th>
+                      <th>低质量夜晚</th>
+                      <th>设备异常</th>
+                    </tr>
+                  </thead>
+                  <tbody id="participantBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel wide">
+              <div class="panel-heading">
+                <div>
+                  <h3>自动提示</h3>
+                  <p>基于问卷回答生成研究复核线索</p>
+                </div>
+              </div>
+              <div id="insights" class="insights"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="entryView" class="view active-view" aria-labelledby="entryTitle">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Daily Report</p>
+              <h2 id="entryTitle">每日睡眠自我报告</h2>
+            </div>
+            <div class="actions">
+              <button class="button" type="button" id="copyLink">复制公开链接</button>
+              <button class="button" type="button" data-view-target="dashboard">查看统计</button>
+            </div>
+          </div>
+
+          <section class="entry-intro" aria-label="填写提示">
+            <div>
+              <span class="intro-kicker">公开填写入口</span>
+              <h3>请根据昨晚到今早的实际情况填写</h3>
+              <p>
+                时间记不清时可填写大约值；研究编号用于区分不同受试者，不需要填写姓名。提交后，研究人员可在“统计概览”和“研究记录”查看分析。
+              </p>
+            </div>
+            <div class="intro-stats" aria-label="问卷概况">
+              <span><strong>7</strong> 个模块</span>
+              <span><strong>3</strong> 分钟左右</span>
+              <span><strong>CSV</strong> 可导出</span>
+            </div>
+          </section>
+
+          <section id="submitSuccess" class="submit-success" aria-live="polite" hidden>
+            <strong>记录已提交</strong>
+            <span>感谢填写。下一次打开此页面时，研究编号会自动保留，只需继续填写新的睡眠日期和睡眠情况。</span>
+          </section>
+
+          <form id="sleepForm" class="entry-form">
+            <section class="form-section profile-section">
+              <div class="section-title-row">
+                <h3>一、基本信息</h3>
+                <button class="link-button" type="button" id="changeParticipant">更换研究编号</button>
+              </div>
+              <div id="participantMemory" class="participant-memory" aria-live="polite">
+                <span>研究编号填写一次后，将自动用于之后的每日记录。</span>
+              </div>
+              <div class="form-grid basic-info-grid">
+                <label>
+                  <span>研究编号</span>
+                  <input name="participantId" required placeholder="例如 S001" />
+                </label>
+                <label>
+                  <span>填写日期</span>
+                  <input name="formDate" type="date" required />
+                </label>
+                <label>
+                  <span>睡眠日期</span>
+                  <input name="sleepDate" type="date" required />
+                </label>
+                <label class="remember-device span-2">
+                  <input name="rememberParticipant" type="checkbox" checked />
+                  <span>在这台设备记住我的研究编号，下次自动填写</span>
+                </label>
+              </div>
+            </section>
+
+            <section class="form-section">
+              <h3>二、昨晚睡眠情况</h3>
+              <div class="form-grid time-grid">
+                <label>
+                  <span>上床时间</span>
+                  <input name="bedTime" type="time" required />
+                </label>
+                <label>
+                  <span>准备入睡时间</span>
+                  <input name="trySleepTime" type="time" required />
+                </label>
+                <label>
+                  <span>醒来时间</span>
+                  <input name="wakeTime" type="time" required />
+                </label>
+                <label>
+                  <span>起床时间</span>
+                  <input name="riseTime" type="time" required />
+                </label>
+              </div>
+              <div class="form-grid">
+                <label>
+                  <span>入睡用时</span>
+                  <select name="sleepLatency">
+                    <option value="15">15 分钟以内</option>
+                    <option value="30">15-30 分钟</option>
+                    <option value="60">30-60 分钟</option>
+                    <option value="90">超过 1 小时</option>
+                    <option value="">不确定</option>
+                  </select>
+                </label>
+                <label>
+                  <span>夜间醒来/起夜</span>
+                  <select name="awakenings">
+                    <option value="0">没有明显醒来</option>
+                    <option value="1">醒来 1 次</option>
+                    <option value="2.5">醒来 2-3 次</option>
+                    <option value="4">醒来 4 次及以上</option>
+                    <option value="">不确定</option>
+                  </select>
+                </label>
+                <label class="span-2">
+                  <span>夜间醒来说明</span>
+                  <input name="awakeningNote" placeholder="可留空" />
+                </label>
+              </div>
+            </section>
+
+            <section class="form-section">
+              <h3>三、白天睡眠与活动</h3>
+              <div class="form-grid">
+                <label>
+                  <span>午睡/小睡</span>
+                  <select name="napStatus">
+                    <option value="no">没有</option>
+                    <option value="yes">有</option>
+                    <option value="unknown">不确定</option>
+                  </select>
+                </label>
+                <label>
+                  <span>午睡分钟数</span>
+                  <input name="napMinutes" type="number" min="0" step="1" placeholder="0" />
+                </label>
+                <label>
+                  <span>剧烈运动</span>
+                  <select name="exercise">
+                    <option value="no">没有</option>
+                    <option value="yes">有</option>
+                    <option value="unknown">不确定</option>
+                  </select>
+                </label>
+                <label>
+                  <span>整体活动量</span>
+                  <select name="activityLevel">
+                    <option value="1">明显较少</option>
+                    <option value="2">略少</option>
+                    <option value="3" selected>差不多</option>
+                    <option value="4">略多</option>
+                    <option value="5">明显较多</option>
+                  </select>
+                </label>
+                <label class="span-2">
+                  <span>运动说明</span>
+                  <input name="exerciseNote" placeholder="时间和类型，可留空" />
+                </label>
+              </div>
+            </section>
+
+            <section class="form-section">
+              <h3>四、饮食、饮品与用药</h3>
+              <div class="form-grid">
+                <label>
+                  <span>咖啡因饮品</span>
+                  <select name="caffeine">
+                    <option value="no">没有</option>
+                    <option value="yes">有</option>
+                    <option value="unknown">不确定</option>
+                  </select>
+                </label>
+                <label>
+                  <span>饮酒</span>
+                  <select name="alcohol">
+                    <option value="no">没有</option>
+                    <option value="yes">有</option>
+                    <option value="unknown">不确定</option>
+                  </select>
+                </label>
+                <label>
+                  <span>影响睡眠/情绪药物</span>
+                  <select name="medication">
+                    <option value="no">没有</option>
+                    <option value="yes">有</option>
+                    <option value="unknown">不确定</option>
+                  </select>
+                </label>
+                <label class="span-2">
+                  <span>咖啡因说明</span>
+                  <input name="caffeineNote" placeholder="时间、种类和数量" />
+                </label>
+                <label>
+                  <span>饮酒说明</span>
+                  <input name="alcoholNote" placeholder="时间、种类和数量" />
+                </label>
+                <label class="span-2">
+                  <span>药物说明</span>
+                  <input name="medicationNote" placeholder="名称或用途" />
+                </label>
+              </div>
+            </section>
+
+            <section class="form-section">
+              <h3>五、身体、情绪与睡眠环境</h3>
+              <div class="form-grid">
+                <label>
+                  <span>身体不适</span>
+                  <select name="discomfort">
+                    <option value="no">没有</option>
+                    <option value="yes">有</option>
+                    <option value="unknown">不确定</option>
+                  </select>
+                </label>
+                <label>
+                  <span>压力/情绪波动</span>
+                  <select name="stress">
+                    <option value="1">没有明显异常</option>
+                    <option value="2">轻微压力或情绪波动</option>
+                    <option value="3">明显压力或情绪波动</option>
+                    <option value="">不确定</option>
+                  </select>
+                </label>
+                <label class="span-2">
+                  <span>身体或情绪说明</span>
+                  <input name="bodyMoodNote" placeholder="可留空" />
+                </label>
+              </div>
+              <fieldset>
+                <legend>睡眠环境变化</legend>
+                <div class="checkbox-grid">
+                  <label><input type="checkbox" name="environment" value="noise" /> 噪音</label>
+                  <label><input type="checkbox" name="environment" value="light" /> 光线较亮</label>
+                  <label><input type="checkbox" name="environment" value="temperature" /> 温度不适</label>
+                  <label><input type="checkbox" name="environment" value="place" /> 更换地点</label>
+                  <label><input type="checkbox" name="environment" value="sharedBed" /> 与他人同床</label>
+                  <label><input type="checkbox" name="environment" value="pet" /> 有宠物干扰</label>
+                </div>
+                <input name="environmentOther" placeholder="其他环境因素" />
+              </fieldset>
+            </section>
+
+            <section class="form-section">
+              <h3>六、设备使用情况</h3>
+              <div class="form-grid">
+                <label>
+                  <span>智能手表佩戴</span>
+                  <select name="watchWear">
+                    <option value="all">整晚佩戴</option>
+                    <option value="partial">部分时间佩戴</option>
+                    <option value="forgot">忘记佩戴</option>
+                    <option value="removed">半夜取下</option>
+                    <option value="unknown">不确定</option>
+                  </select>
+                </label>
+                <label>
+                  <span>睡眠枕垫状态</span>
+                  <select name="padStatus">
+                    <option value="normal">正常</option>
+                    <option value="moved">可能移动过</option>
+                    <option value="offline">可能断电或断网</option>
+                    <option value="unknown">不确定</option>
+                  </select>
+                </label>
+                <label class="span-2">
+                  <span>设备异常说明</span>
+                  <input name="deviceNote" placeholder="可留空" />
+                </label>
+              </div>
+            </section>
+
+            <section class="form-section">
+              <h3>七、主观睡眠感受</h3>
+              <div class="form-grid">
+                <label>
+                  <span>总体睡眠质量</span>
+                  <select name="sleepQuality">
+                    <option value="1">很差</option>
+                    <option value="2">较差</option>
+                    <option value="3" selected>一般</option>
+                    <option value="4">较好</option>
+                    <option value="5">很好</option>
+                  </select>
+                </label>
+                <label>
+                  <span>醒后恢复程度</span>
+                  <select name="recovery">
+                    <option value="1">明显没有恢复</option>
+                    <option value="2">恢复较少</option>
+                    <option value="3" selected>一般</option>
+                    <option value="4">比较恢复</option>
+                    <option value="5">恢复很好</option>
+                  </select>
+                </label>
+                <label>
+                  <span>白天困倦</span>
+                  <select name="daytimeSleepiness">
+                    <option value="1">不困</option>
+                    <option value="2">有些困</option>
+                    <option value="3">比较困</option>
+                    <option value="4">非常困</option>
+                    <option value="5">明显影响日常活动</option>
+                  </select>
+                </label>
+                <label class="span-2">
+                  <span>其他补充说明</span>
+                  <textarea name="additionalNote" rows="3" placeholder="任何可能影响睡眠的情况"></textarea>
+                </label>
+              </div>
+            </section>
+
+            <div class="form-actions">
+              <button class="button ghost" type="reset">清空</button>
+              <button class="button primary" type="submit">保存记录</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="recordsView" class="view" aria-labelledby="recordsTitle">
+          <div class="section-header">
+            <div>
+              <p class="eyebrow">Records</p>
+              <h2 id="recordsTitle">问卷记录表</h2>
+            </div>
+            <div class="actions">
+              <label class="button file-button">
+                导入 CSV
+                <input id="csvImport" type="file" accept=".csv,text/csv" />
+              </label>
+              <button class="button" type="button" id="exportCsv">导出 CSV</button>
+              <button class="button danger" type="button" id="clearAll">清空数据</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>睡眠日期</th>
+                  <th>研究编号</th>
+                  <th>睡眠时长</th>
+                  <th>睡眠效率</th>
+                  <th>质量</th>
+                  <th>夜醒</th>
+                  <th>影响因素</th>
+                  <th>设备</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="recordsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="./config.js"></script>
