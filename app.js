@@ -156,15 +156,22 @@ async function handleSubmit(event) {
   } else {
     forgetParticipant();
   }
-  await addRecord(entry);
+  const submittedOnline = await addRecord(entry);
   els.form.reset();
   els.form.elements.formDate.value = new Date().toISOString().slice(0, 10);
   els.form.elements.sleepDate.value = new Date().toISOString().slice(0, 10);
   applyRememberedParticipant();
-  els.submitSuccess.hidden = false;
+  showSubmissionResult(submittedOnline);
   render();
   switchView("entry");
-  showToast(useServer ? "记录已提交到共享服务器。" : "记录已保存到当前浏览器。");
+  showToast(submittedOnline ? "记录已同步到 Google Sheet。" : "记录仅保存在当前浏览器，尚未同步。");
+}
+
+function showSubmissionResult(submittedOnline) {
+  els.submitSuccess.hidden = false;
+  els.submitSuccess.innerHTML = submittedOnline
+    ? `<strong>记录已同步</strong><span>感谢填写。本次记录已经保存到 Google Sheet。</span>`
+    : `<strong>记录尚未同步</strong><span>在线提交失败，本次记录仅保存在这台设备的浏览器中。请保留本页数据并联系研究人员。</span>`;
 }
 
 function applyRememberedParticipant() {
@@ -260,13 +267,12 @@ async function syncFromServer() {
 
 async function addRecord(entry) {
   if (isGoogleBackend()) {
-    await addRecordToGoogleSheet(entry);
-    return;
+    return addRecordToGoogleSheet(entry);
   }
   if (!API_ENDPOINT) {
     records.push(entry);
     saveRecords();
-    return;
+    return false;
   }
   try {
     const response = await fetch(API_ENDPOINT, {
@@ -282,12 +288,14 @@ async function addRecord(entry) {
     }
     useServer = true;
     updateStorageStatus();
+    return true;
   } catch {
     records.push(entry);
     saveRecords();
     useServer = false;
     updateStorageStatus();
     showToast("在线保存失败，已暂存到本地浏览器。");
+    return false;
   }
 }
 
@@ -347,16 +355,11 @@ async function addRecordToGoogleSheet(entry) {
     updateModeBanner();
     updateAdminGate();
     showToast("尚未配置 Google Sheet，已暂存到当前浏览器。");
-    return;
+    return false;
   }
 
   try {
-    const payload = await googleJsonp({
-      ...entry,
-      action: "submit",
-      environment: Array.isArray(entry.environment) ? entry.environment.join("|") : entry.environment || "",
-    });
-    if (!payload.ok) throw new Error(payload.error || "Google Sheet submit failed");
+    await submitGoogleRecord(entry);
     useServer = true;
     adminRequired = true;
     updateStorageStatus("已提交到 Google Sheet");
@@ -365,6 +368,7 @@ async function addRecordToGoogleSheet(entry) {
     if (adminPin) {
       await syncFromGoogleSheet();
     }
+    return true;
   } catch {
     records.push(entry);
     saveRecords();
@@ -373,6 +377,7 @@ async function addRecordToGoogleSheet(entry) {
     updateModeBanner();
     updateAdminGate();
     showToast("Google Sheet 提交失败，已暂存到当前浏览器。");
+    return false;
   }
 }
 
@@ -524,49 +529,28 @@ function googleJsonp(params) {
   });
 }
 
-function submitGoogleForm(entry) {
-  return new Promise((resolve) => {
-    const iframeName = `sleep_submit_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const iframe = document.createElement("iframe");
-    iframe.name = iframeName;
-    iframe.hidden = true;
+async function submitGoogleRecord(entry) {
+  const body = new URLSearchParams();
+  const payload = {
+    ...entry,
+    action: "submit",
+    environment: Array.isArray(entry.environment) ? entry.environment.join("|") : entry.environment || "",
+  };
 
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = GOOGLE_SCRIPT_URL;
-    form.target = iframeName;
-    form.hidden = true;
-
-    const payload = {
-      ...entry,
-      action: "submit",
-      environment: Array.isArray(entry.environment) ? entry.environment.join("|") : entry.environment || "",
-    };
-
-    Object.entries(payload).forEach(([key, value]) => {
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = key;
-      input.value = value == null ? "" : String(value);
-      form.appendChild(input);
-    });
-
-    let resolved = false;
-    function finish() {
-      if (resolved) return;
-      resolved = true;
-      window.setTimeout(() => {
-        iframe.remove();
-        form.remove();
-      }, 500);
-      resolve();
-    }
-
-    iframe.addEventListener("load", finish);
-    document.body.append(iframe, form);
-    form.submit();
-    window.setTimeout(finish, 1800);
+  Object.entries(payload).forEach(([key, value]) => {
+    body.set(key, value == null ? "" : String(value));
   });
+
+  const response = await fetch(GOOGLE_SCRIPT_URL, {
+    method: "POST",
+    body,
+    credentials: "omit",
+    redirect: "follow",
+  });
+  if (!response.ok) throw new Error(`Google Sheet submit failed (${response.status})`);
+
+  const result = (await response.text()).trim().toLowerCase();
+  if (result !== "ok") throw new Error(result || "Google Sheet submit failed");
 }
 
 function postGoogleAction(payload) {
